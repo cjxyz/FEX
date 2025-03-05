@@ -3,13 +3,10 @@ name: Mingw build
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - fex-main
 
 env:
-  BUILD_TYPE: Debug
+  BUILD_TYPE: Release
 
 jobs:
   mingw_build:
@@ -84,11 +81,18 @@ jobs:
       working-directory: ${{runner.workspace}}/build
       shell: bash
       # Execute the build.  You can specify a specific target with "--target <NAME>"
-      run: cmake --build . --config $BUILD_TYPE
+      run: cmake --build . --config $BUILD_TYPE --verbose
 
     - name: Set runner name
       if: ${{ always() }}
       run: echo "runner_name=$(hostname)" >> $GITHUB_ENV
+
+    - name: Find files
+      shell: bash
+      run: |
+        ls -la
+        ls -la /build/
+        ls -la /build/bin/
 
     - name: Upload results
       if: ${{ always() }}
