@@ -62,29 +62,36 @@ void OpDispatchBuilder::SHA1MSG2Op(OpcodeArgs) {
   Ref Dest = LoadSource(FPRClass, Op, Op->Dest, Op->Flags);
   Ref Src = LoadSource(FPRClass, Op, Op->Src[0], Op->Flags);
 
-  // This instruction mostly matches ARMv8's SHA1SU1 instruction but one of the elements are flipped in an unexpected way.
-  // Do all the work without it.
+  Ref Result;
+  if (CTX->HostFeatures.SupportsSHA) {
+    // ARM SHA1 mostly matches x86 semantics, except the input and outputs are both flipped from elements 0,1,2,3 to 3,2,1,0.
+    auto Src1 = SHADataShuffle(Dest);
+    auto Src2 = SHADataShuffle(Src);
 
-  const auto ZeroRegister = LoadZeroVector(OpSize::i32Bit);
+    // The result is swizzled differently than expected
+    Result = SHADataShuffle(_VSha1SU1(Src1, Src2));
+  } else {
+    // Shift the incoming source left by a 32-bit element, inserting Zeros.
+    // This could be slightly improved to use a VInsGPR with the zero register.
+    const auto ZeroRegister = LoadZeroVector(OpSize::i32Bit);
+    auto Src2Shift = _VExtr(OpSize::i128Bit, OpSize::i8Bit, Src, ZeroRegister, 12);
+    auto Xor1 = _VXor(OpSize::i128Bit, OpSize::i8Bit, Dest, Src2Shift);
 
-  // Shift the incoming source left by a 32-bit element, inserting Zeros.
-  // This could be slightly improved to use a VInsGPR with the zero register.
-  auto Src2Shift = _VExtr(OpSize::i128Bit, OpSize::i8Bit, Src, ZeroRegister, 12);
-  auto Xor1 = _VXor(OpSize::i128Bit, OpSize::i8Bit, Dest, Src2Shift);
+    // Emulate rotate.
+    auto ShiftLeftXor1 = _VShlI(OpSize::i128Bit, OpSize::i32Bit, Xor1, 1);
+    auto RotatedXor1 = _VUShraI(OpSize::i128Bit, OpSize::i32Bit, ShiftLeftXor1, Xor1, 31);
 
-  // Emulate rotate.
-  auto ShiftLeftXor1 = _VShlI(OpSize::i128Bit, OpSize::i32Bit, Xor1, 1);
-  auto RotatedXor1 = _VUShraI(OpSize::i128Bit, OpSize::i32Bit, ShiftLeftXor1, Xor1, 31);
+    // Element0 didn't get XOR'd with anything, so do it now.
+    auto ExtractUpper = _VDupElement(OpSize::i128Bit, OpSize::i32Bit, RotatedXor1, 3);
+    auto XorLower = _VXor(OpSize::i128Bit, OpSize::i8Bit, Dest, ExtractUpper);
 
-  // Element0 didn't get XOR'd with anything, so do it now.
-  auto ExtractUpper = _VDupElement(OpSize::i128Bit, OpSize::i32Bit, RotatedXor1, 3);
-  auto XorLower = _VXor(OpSize::i128Bit, OpSize::i8Bit, Dest, ExtractUpper);
+    // Emulate rotate.
+    auto ShiftLeftXorLower = _VShlI(OpSize::i128Bit, OpSize::i32Bit, XorLower, 1);
+    auto RotatedXorLower = _VUShraI(OpSize::i128Bit, OpSize::i32Bit, ShiftLeftXorLower, XorLower, 31);
 
-  // Emulate rotate.
-  auto ShiftLeftXorLower = _VShlI(OpSize::i128Bit, OpSize::i32Bit, XorLower, 1);
-  auto RotatedXorLower = _VUShraI(OpSize::i128Bit, OpSize::i32Bit, ShiftLeftXorLower, XorLower, 31);
+    Result = _VInsElement(OpSize::i128Bit, OpSize::i32Bit, 0, 0, RotatedXor1, RotatedXorLower);
+  }
 
-  auto Result = _VInsElement(OpSize::i128Bit, OpSize::i32Bit, 0, 0, RotatedXor1, RotatedXorLower);
 
   StoreResult(FPRClass, Op, Result, OpSize::iInvalid);
 }
@@ -92,16 +99,16 @@ void OpDispatchBuilder::SHA1MSG2Op(OpcodeArgs) {
 void OpDispatchBuilder::SHA1RNDS4Op(OpcodeArgs) {
   using FnType = Ref (*)(OpDispatchBuilder&, Ref, Ref, Ref);
 
-  const auto f0 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref {
+  const auto f0 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref { // sha1c?
     return Self._Xor(OpSize::i32Bit, Self._And(OpSize::i32Bit, B, C), Self._Andn(OpSize::i32Bit, D, B));
   };
-  const auto f1 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref {
+  const auto f1 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref { // sha1p with different key
     return Self._Xor(OpSize::i32Bit, Self._Xor(OpSize::i32Bit, B, C), D);
   };
-  const auto f2 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref {
+  const auto f2 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref { // sha1m
     return Self.BitwiseAtLeastTwo(B, C, D);
   };
-  const auto f3 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref {
+  const auto f3 = [](OpDispatchBuilder& Self, Ref B, Ref C, Ref D) -> Ref { // sha1p
     return Self._Xor(OpSize::i32Bit, Self._Xor(OpSize::i32Bit, B, C), D);
   };
 
@@ -119,60 +126,92 @@ void OpDispatchBuilder::SHA1RNDS4Op(OpcodeArgs) {
     f3,
   };
 
-  const uint64_t Imm8 = Op->Src[1].Literal() & 0b11;
-  const FnType Fn = fn_array[Imm8];
-  auto K = _Constant(OpSize::i32Bit, k_array[Imm8]);
 
+  const uint64_t Imm8 = Op->Src[1].Literal() & 0b11;
   Ref Dest = LoadSource(FPRClass, Op, Op->Dest, Op->Flags);
   Ref Src = LoadSource(FPRClass, Op, Op->Src[0], Op->Flags);
 
-  auto W0E = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 3);
+  Ref Result {};
+  if (CTX->HostFeatures.SupportsSHA) {
+    Ref ConstantVector {};
+    switch (Imm8) {
+    case 0:
+      ConstantVector = LoadAndCacheNamedVectorConstant(OpSize::i128Bit, FEXCore::IR::NamedVectorConstant::NAMED_VECTOR_SHA1RNDS_K0);
+      break;
+    case 1:
+      ConstantVector = LoadAndCacheNamedVectorConstant(OpSize::i128Bit, FEXCore::IR::NamedVectorConstant::NAMED_VECTOR_SHA1RNDS_K1);
+      break;
+    case 2:
+      ConstantVector = LoadAndCacheNamedVectorConstant(OpSize::i128Bit, FEXCore::IR::NamedVectorConstant::NAMED_VECTOR_SHA1RNDS_K2);
+      break;
+    case 3:
+      ConstantVector = LoadAndCacheNamedVectorConstant(OpSize::i128Bit, FEXCore::IR::NamedVectorConstant::NAMED_VECTOR_SHA1RNDS_K3);
+      break;
+    }
 
-  using RoundResult = std::tuple<Ref, Ref, Ref, Ref, Ref>;
+    const auto ZeroRegister = LoadZeroVector(OpSize::i32Bit);
 
-  const auto Round0 = [&]() -> RoundResult {
-    auto A = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 3);
-    auto B = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 2);
-    auto C = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 1);
-    auto D = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 0);
+    Ref Src1 = SHADataShuffle(Dest);
+    Ref Src2 = SHADataShuffle(Src);
+    Src2 = _VAdd(OpSize::i128Bit, OpSize::i32Bit, Src2, ConstantVector);
 
-    auto A1 =
-      _Add(OpSize::i32Bit,
-           _Add(OpSize::i32Bit, _Add(OpSize::i32Bit, Fn(*this, B, C, D), _Ror(OpSize::i32Bit, A, _Constant(OpSize::i32Bit, 27))), W0E), K);
-    auto B1 = A;
-    auto C1 = _Ror(OpSize::i32Bit, B, _Constant(OpSize::i32Bit, 2));
-    auto D1 = C;
-    auto E1 = D;
+    switch (Imm8) {
+    case 0: Result = SHADataShuffle(_VSha1C(Src1, ZeroRegister, Src2)); break;
+    case 2: Result = SHADataShuffle(_VSha1M(Src1, ZeroRegister, Src2)); break;
+    case 1:
+    case 3: Result = SHADataShuffle(_VSha1P(Src1, ZeroRegister, Src2)); break;
+    }
+  } else {
+    const FnType Fn = fn_array[Imm8];
+    auto K = _Constant(OpSize::i32Bit, k_array[Imm8]);
+    auto W0E = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 3);
 
-    return {A1, B1, C1, D1, E1};
-  };
-  const auto Round1To3 = [&](Ref A, Ref B, Ref C, Ref D, Ref E, Ref Src, unsigned W_idx) -> RoundResult {
-    // Kill W and E at the beginning
-    auto W = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, W_idx);
-    auto Q = _Add(OpSize::i32Bit, W, E);
+    using RoundResult = std::tuple<Ref, Ref, Ref, Ref, Ref>;
 
-    auto ANext =
-      _Add(OpSize::i32Bit,
-           _Add(OpSize::i32Bit, _Add(OpSize::i32Bit, Fn(*this, B, C, D), _Ror(OpSize::i32Bit, A, _Constant(OpSize::i32Bit, 27))), Q), K);
-    auto BNext = A;
-    auto CNext = _Ror(OpSize::i32Bit, B, _Constant(OpSize::i32Bit, 2));
-    auto DNext = C;
-    auto ENext = D;
+    const auto Round0 = [&]() -> RoundResult {
+      auto A = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 3);
+      auto B = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 2);
+      auto C = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 1);
+      auto D = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 0);
 
-    return {ANext, BNext, CNext, DNext, ENext};
-  };
+      auto A1 =
+        _Add(OpSize::i32Bit,
+             _Add(OpSize::i32Bit, _Add(OpSize::i32Bit, Fn(*this, B, C, D), _Ror(OpSize::i32Bit, A, _Constant(OpSize::i32Bit, 27))), W0E), K);
+      auto B1 = A;
+      auto C1 = _Ror(OpSize::i32Bit, B, _Constant(OpSize::i32Bit, 2));
+      auto D1 = C;
+      auto E1 = D;
 
-  auto [A1, B1, C1, D1, E1] = Round0();
-  auto [A2, B2, C2, D2, E2] = Round1To3(A1, B1, C1, D1, E1, Src, 2);
-  auto [A3, B3, C3, D3, E3] = Round1To3(A2, B2, C2, D2, E2, Src, 1);
-  auto Final = Round1To3(A3, B3, C3, D3, E3, Src, 0);
+      return {A1, B1, C1, D1, E1};
+    };
+    const auto Round1To3 = [&](Ref A, Ref B, Ref C, Ref D, Ref E, Ref Src, unsigned W_idx) -> RoundResult {
+      // Kill W and E at the beginning
+      auto W = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, W_idx);
+      auto Q = _Add(OpSize::i32Bit, W, E);
 
-  auto Dest3 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 3, Dest, std::get<0>(Final));
-  auto Dest2 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 2, Dest3, std::get<1>(Final));
-  auto Dest1 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 1, Dest2, std::get<2>(Final));
-  auto Dest0 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 0, Dest1, std::get<3>(Final));
+      auto ANext =
+        _Add(OpSize::i32Bit,
+             _Add(OpSize::i32Bit, _Add(OpSize::i32Bit, Fn(*this, B, C, D), _Ror(OpSize::i32Bit, A, _Constant(OpSize::i32Bit, 27))), Q), K);
+      auto BNext = A;
+      auto CNext = _Ror(OpSize::i32Bit, B, _Constant(OpSize::i32Bit, 2));
+      auto DNext = C;
+      auto ENext = D;
 
-  StoreResult(FPRClass, Op, Dest0, OpSize::iInvalid);
+      return {ANext, BNext, CNext, DNext, ENext};
+    };
+
+    auto [A1, B1, C1, D1, E1] = Round0();
+    auto [A2, B2, C2, D2, E2] = Round1To3(A1, B1, C1, D1, E1, Src, 2);
+    auto [A3, B3, C3, D3, E3] = Round1To3(A2, B2, C2, D2, E2, Src, 1);
+    auto Final = Round1To3(A3, B3, C3, D3, E3, Src, 0);
+
+    auto Dest3 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 3, Dest, std::get<0>(Final));
+    auto Dest2 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 2, Dest3, std::get<1>(Final));
+    auto Dest1 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 1, Dest2, std::get<2>(Final));
+    Result = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 0, Dest1, std::get<3>(Final));
+  }
+
+  StoreResult(FPRClass, Op, Result, OpSize::iInvalid);
 }
 
 void OpDispatchBuilder::SHA256MSG1Op(OpcodeArgs) {
@@ -222,19 +261,28 @@ void OpDispatchBuilder::SHA256MSG2Op(OpcodeArgs) {
   Ref Dest = LoadSource(FPRClass, Op, Op->Dest, Op->Flags);
   Ref Src = LoadSource(FPRClass, Op, Op->Src[0], Op->Flags);
 
-  auto W14 = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 2);
-  auto W15 = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 3);
-  auto W16 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 0), Sigma1(W14));
-  auto W17 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 1), Sigma1(W15));
-  auto W18 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 2), Sigma1(W16));
-  auto W19 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 3), Sigma1(W17));
+  Ref Result;
+  if (CTX->HostFeatures.SupportsSHA) {
+    auto Src1 = _VExtr(OpSize::i128Bit, OpSize::i32Bit, Dest, Dest, 3);
+    auto DupDst = _VDupElement(OpSize::i128Bit, OpSize::i32Bit, Dest, 3);
+    auto Src2 = _VZip2(OpSize::i128Bit, OpSize::i64Bit, DupDst, Src);
 
-  auto D3 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 3, Dest, W19);
-  auto D2 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 2, D3, W18);
-  auto D1 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 1, D2, W17);
-  auto D0 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 0, D1, W16);
+    Result = _VSha256U1(Src1, Src2);
+  } else {
+    auto W14 = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 2);
+    auto W15 = _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Src, 3);
+    auto W16 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 0), Sigma1(W14));
+    auto W17 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 1), Sigma1(W15));
+    auto W18 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 2), Sigma1(W16));
+    auto W19 = _Add(OpSize::i32Bit, _VExtractToGPR(OpSize::i128Bit, OpSize::i32Bit, Dest, 3), Sigma1(W17));
 
-  StoreResult(FPRClass, Op, D0, OpSize::iInvalid);
+    auto D3 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 3, Dest, W19);
+    auto D2 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 2, D3, W18);
+    auto D1 = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 1, D2, W17);
+    Result = _VInsGPR(OpSize::i128Bit, OpSize::i32Bit, 0, D1, W16);
+  }
+
+  StoreResult(FPRClass, Op, Result, OpSize::iInvalid);
 }
 
 Ref OpDispatchBuilder::BitwiseAtLeastTwo(Ref A, Ref B, Ref C) {

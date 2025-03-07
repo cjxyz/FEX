@@ -2379,13 +2379,13 @@ public:
     } else if (srcsize == SubRegSize::i32Bit) {
       // Srcsize = fp32, opc1 encodes dst size
       LOGMAN_THROW_A_FMT(dstsize != SubRegSize::i16Bit, "Unsupported size in {}", __func__);
+      opc1 = dstsize == SubRegSize::i64Bit ? 0b11 : 0b10;
       opc2 = 0b10;
-      opc1 = dstsize == SubRegSize::i64Bit ? 0b11 : dstsize == SubRegSize::i32Bit ? 0b10 : 0b00;
     } else if (srcsize == SubRegSize::i64Bit) {
       LOGMAN_THROW_A_FMT(dstsize != SubRegSize::i16Bit, "Unsupported size in {}", __func__);
       // SrcSize = fp64, opc2 encodes dst size
       opc1 = 0b11;
-      opc2 = dstsize == SubRegSize::i64Bit ? 0b11 : dstsize == SubRegSize::i32Bit ? 0b00 : 0b00;
+      opc2 = dstsize == SubRegSize::i64Bit ? 0b11 : 0b00;
     } else {
       FEX_UNREACHABLE;
     }
@@ -2400,13 +2400,13 @@ public:
     } else if (srcsize == SubRegSize::i32Bit) {
       // Srcsize = fp32, opc1 encodes dst size
       LOGMAN_THROW_A_FMT(dstsize != SubRegSize::i16Bit, "Unsupported size in {}", __func__);
+      opc1 = dstsize == SubRegSize::i64Bit ? 0b11 : 0b10;
       opc2 = 0b10;
-      opc1 = dstsize == SubRegSize::i64Bit ? 0b11 : dstsize == SubRegSize::i32Bit ? 0b10 : 0b00;
     } else if (srcsize == SubRegSize::i64Bit) {
       LOGMAN_THROW_A_FMT(dstsize != SubRegSize::i16Bit, "Unsupported size in {}", __func__);
       // SrcSize = fp64, opc2 encodes dst size
       opc1 = 0b11;
-      opc2 = dstsize == SubRegSize::i64Bit ? 0b11 : dstsize == SubRegSize::i32Bit ? 0b00 : 0b00;
+      opc2 = dstsize == SubRegSize::i64Bit ? 0b11 : 0b00;
     } else {
       FEX_UNREACHABLE;
     }
@@ -5029,7 +5029,7 @@ private:
   void SVE2IntegerMultiplyLong(uint32_t SUT, SubRegSize size, ZRegister zd, ZRegister zn, ZRegister zm) {
     // PMULLB and PMULLT support the use of 128-bit element sizes (with the SVE2PMULL128 extension)
     if (SUT == 0b010 || SUT == 0b011) {
-      LOGMAN_THROW_A_FMT(size != SubRegSize::i8Bit, "Can't use 8-bit element size");
+      LOGMAN_THROW_A_FMT(size != SubRegSize::i8Bit && size != SubRegSize::i32Bit, "Can't use 8-bit or 32-bit element size");
 
       // 128-bit variant is encoded as if it were 8-bit (0b00)
       if (size == SubRegSize::i128Bit) {

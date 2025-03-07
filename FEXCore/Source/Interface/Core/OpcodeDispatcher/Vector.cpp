@@ -626,17 +626,36 @@ void OpDispatchBuilder::AVXInsertScalarFCMPOp(OpcodeArgs) {
 template void OpDispatchBuilder::AVXInsertScalarFCMPOp<OpSize::i32Bit>(OpcodeArgs);
 template void OpDispatchBuilder::AVXInsertScalarFCMPOp<OpSize::i64Bit>(OpcodeArgs);
 
+void OpDispatchBuilder::RSqrt3DNowOp(OpcodeArgs, bool Duplicate) {
+  const auto Size = OpSizeFromSrc(Op);
+  const auto ElementSize = OpSize::i32Bit;
+
+  Ref Src = LoadSource_WithOpSize(FPRClass, Op, Op->Src[0], Size, Op->Flags);
+
+  // For the sqrt reciprocal in 3DNow!, if the source is negative,
+  // then the result has the same sign as the source but the result is always calculated
+  // as if the source was positive.
+  Ref AbsSrc = _VFAbs(Size, ElementSize, Src);
+  Ref PosRSqrt = _VFRSqrtPrecision(Size, ElementSize, AbsSrc);
+  Ref Result = _VFCopySign(Size, ElementSize, PosRSqrt, Src);
+
+  if (Duplicate) {
+    Result = _VDupElement(Size, ElementSize, Result, 0);
+  }
+
+  StoreResult(FPRClass, Op, Result, OpSize::iInvalid);
+}
+
 void OpDispatchBuilder::VectorUnaryOp(OpcodeArgs, IROps IROp, IR::OpSize ElementSize) {
   // In the event of a scalar operation and a vector source, then
   // we can specify the entire vector length in order to avoid
   // unnecessary sign extension on the element to be operated on.
   // In the event of a memory operand, we load the exact element size.
-  const auto SrcSize = OpSizeFromSrc(Op);
+  const auto Size = OpSizeFromSrc(Op);
 
-  Ref Src = LoadSource_WithOpSize(FPRClass, Op, Op->Src[0], SrcSize, Op->Flags);
+  Ref Src = LoadSource_WithOpSize(FPRClass, Op, Op->Src[0], Size, Op->Flags);
 
-  DeriveOp(ALUOp, IROp, _VFSqrt(SrcSize, ElementSize, Src));
-
+  DeriveOp(ALUOp, IROp, _VFSqrt(Size, ElementSize, Src));
   StoreResult(FPRClass, Op, ALUOp, OpSize::iInvalid);
 }
 
@@ -676,8 +695,8 @@ void OpDispatchBuilder::VectorUnaryDuplicateOp(OpcodeArgs) {
   VectorUnaryDuplicateOpImpl(Op, IROp, ElementSize);
 }
 
-template void OpDispatchBuilder::VectorUnaryDuplicateOp<IR::OP_VFRSQRT, OpSize::i32Bit>(OpcodeArgs);
-template void OpDispatchBuilder::VectorUnaryDuplicateOp<IR::OP_VFRECP, OpSize::i32Bit>(OpcodeArgs);
+// TODO: there's only one instantiation of this template. Lets remove it.
+template void OpDispatchBuilder::VectorUnaryDuplicateOp<IR::OP_VFRECPPRECISION, OpSize::i32Bit>(OpcodeArgs);
 
 void OpDispatchBuilder::MOVQOp(OpcodeArgs, VectorOpType VectorType) {
   const auto SrcSize = Op->Src[0].IsGPR() ? OpSize::i128Bit : OpSizeFromSrc(Op);
@@ -967,12 +986,16 @@ Ref OpDispatchBuilder::Single128Bit4ByteVectorShuffle(Ref Src, uint8_t Shuffle) 
     // Special case element duplicate and broadcast to low or high 64-bits.
     return _VDupElement(OpSize::i128Bit, OpSize::i32Bit, Src, Shuffle & 0b11);
   }
-
   case 0b00'00'10'10: {
     // Weird reverse low elements and broadcast to each half of the register
     Ref Tmp = _VUnZip(OpSize::i128Bit, OpSize::i32Bit, Src, Src);
     Tmp = _VRev64(OpSize::i128Bit, OpSize::i32Bit, Tmp);
     return _VZip(OpSize::i128Bit, OpSize::i32Bit, Tmp, Tmp);
+  }
+  case 0b00'00'11'10: {
+    // First element duplicated and shifted in to the top.
+    auto Dup = _VDupElement(OpSize::i128Bit, OpSize::i32Bit, Src, 0);
+    return _VExtr(OpSize::i128Bit, OpSize::i32Bit, Dup, Src, 2);
   }
   case 0b00'01'00'01: {
     ///< Weird reversed low elements and broadcast
@@ -983,6 +1006,11 @@ Ref OpDispatchBuilder::Single128Bit4ByteVectorShuffle(Ref Src, uint8_t Shuffle) 
     ///< Weird reverse low two elements in to high half
     Ref Tmp = _VZip(OpSize::i128Bit, OpSize::i32Bit, Src, Src);
     return _VExtr(OpSize::i128Bit, OpSize::i8Bit, Tmp, Tmp, 4);
+  }
+  case 0b00'01'10'11: {
+    // Inverse elements
+    Ref Tmp = _VRev64(OpSize::i128Bit, OpSize::i32Bit, Src);
+    return _VExtr(OpSize::i128Bit, OpSize::i32Bit, Tmp, Tmp, 2);
   }
   case 0b00'10'00'10: {
     ///< Weird reversed even elements and broadcast
@@ -1101,6 +1129,10 @@ Ref OpDispatchBuilder::Single128Bit4ByteVectorShuffle(Ref Src, uint8_t Shuffle) 
     ///< Reverse top two elements and broadcast to each half of the register
     Ref Tmp = _VZip2(OpSize::i128Bit, OpSize::i32Bit, Src, Src);
     return _VExtr(OpSize::i128Bit, OpSize::i8Bit, Tmp, Tmp, 8);
+  }
+  case 0b10'11'00'01: {
+    // Reverse each 64-bit lane.
+    return _VRev64(OpSize::i128Bit, OpSize::i32Bit, Src);
   }
   case 0b10'11'10'11: {
     ///< Weird top two elements reverse and broadcast

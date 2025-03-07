@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include "Common/AsyncNet.h"
 #include "Common/Config.h"
 #include "Common/FEXServerClient.h"
 
@@ -25,60 +26,31 @@
 
 namespace FEXServerClient {
 int RequestPIDFDPacket(int ServerSocket, PacketType Type) {
+  fasio::tcp_socket Socket {ServerSocket};
   FEXServerRequestPacket Req {
     .Header {
       .Type = Type,
     },
   };
 
-  int Result = write(ServerSocket, &Req, sizeof(Req.BasicRequest));
-  if (Result != -1) {
-    // Wait for success response with SCM_RIGHTS
-
-    FEXServerResultPacket Res {};
-    struct iovec iov {
-      .iov_base = &Res, .iov_len = sizeof(Res),
-    };
-
-    struct msghdr msg {
-      .msg_name = nullptr, .msg_namelen = 0, .msg_iov = &iov, .msg_iovlen = 1,
-    };
-
-    // Setup the ancillary buffer. This is where we will be getting pipe FDs
-    // We only need 4 bytes for the FD
-    constexpr size_t CMSG_SIZE = CMSG_SPACE(sizeof(int));
-    union AncillaryBuffer {
-      struct cmsghdr Header;
-      uint8_t Buffer[CMSG_SIZE];
-    };
-    AncillaryBuffer AncBuf {};
-
-    // Now link to our ancilllary buffer
-    msg.msg_control = AncBuf.Buffer;
-    msg.msg_controllen = CMSG_SIZE;
-
-    ssize_t DataResult = recvmsg(ServerSocket, &msg, 0);
-    if (DataResult > 0) {
-      // Now that we have the data, we can extract the FD from the ancillary buffer
-      struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-
-      // Do some error checking
-      if (cmsg == nullptr || cmsg->cmsg_len != CMSG_LEN(sizeof(int)) || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
-        // Couldn't get a socket
-      } else {
-        // Check for Success.
-        // If type error was returned then the FEXServer doesn't have a log to pipe in to
-        if (Res.Header.Type == PacketType::TYPE_SUCCESS) {
-          // Now that we know the cmsg is sane, read the FD
-          int NewFD {};
-          memcpy(&NewFD, CMSG_DATA(cmsg), sizeof(NewFD));
-          return NewFD;
-        }
-      }
-    }
+  // Send request
+  fasio::error ec;
+  write(Socket, fasio::mutable_buffer {std::as_writable_bytes(std::span {&Req, 1})}, ec);
+  if (ec != fasio::error::success) {
+    return -1;
   }
 
-  return -1;
+  // Wait for success response and log FD
+  FEXServerResultPacket Res {};
+  fasio::mutable_buffer ResBuffer {std::as_writable_bytes(std::span {&Res, 1})};
+  int NewFD = -1;
+  ResBuffer.FD = &NewFD;
+  read(Socket, ResBuffer, ec);
+  if (ec != fasio::error::success || Res.Header.Type != PacketType::TYPE_SUCCESS) {
+    return -1;
+  }
+
+  return NewFD;
 }
 
 static int ServerFD {-1};
@@ -220,7 +192,7 @@ int ConnectToServer(ConnectionOption ConnectionOption) {
   return -1;
 }
 
-bool SetupClient(char* InterpreterPath) {
+bool SetupClient(std::string_view InterpreterPath) {
   ServerFD = FEXServerClient::ConnectToAndStartServer(InterpreterPath);
   if (ServerFD == -1) {
     return false;
@@ -238,7 +210,7 @@ bool SetupClient(char* InterpreterPath) {
   return true;
 }
 
-int ConnectToAndStartServer(char* InterpreterPath) {
+int ConnectToAndStartServer(std::string_view InterpreterPath) {
   int ServerFD = ConnectToServer(ConnectionOption::NoPrintConnectionError);
   if (ServerFD == -1) {
     // Couldn't connect to the server. Start one
@@ -250,7 +222,7 @@ int ConnectToAndStartServer(char* InterpreterPath) {
       return -1;
     }
 
-    fextl::string FEXServerPath = FHU::Filesystem::ParentPath(InterpreterPath) + "/FEXServer";
+    fextl::string FEXServerPath = fextl::fmt::format("{}/FEXServer", InterpreterPath);
     // Check if a local FEXServer next to FEXInterpreter exists
     // If it does then it takes priority over the installed one
     if (!FHU::Filesystem::Exists(FEXServerPath)) {
@@ -270,10 +242,13 @@ int ConnectToAndStartServer(char* InterpreterPath) {
       // Child
       close(fds[0]); // Close read end of pipe
 
-      const char* argv[2];
+      const char* argv[4];
 
+      auto pipe_string = fextl::fmt::format("{}", fds[1]);
       argv[0] = FEXServerPath.c_str();
-      argv[1] = nullptr;
+      argv[1] = "--wait_pipe";
+      argv[2] = pipe_string.c_str();
+      argv[3] = nullptr;
 
       if (execvp(argv[0], (char* const*)argv) == -1) {
         // Let the parent know that we couldn't execute for some reason

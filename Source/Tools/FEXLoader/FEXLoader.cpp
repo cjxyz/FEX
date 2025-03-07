@@ -340,7 +340,8 @@ int main(int argc, char** argv, char** const envp) {
   }
 
   // Ensure FEXServer is setup before config options try to pull CONFIG_ROOTFS
-  if (!FEXServerClient::SetupClient(argv[0])) {
+  auto SelfPath = FEX::GetSelfPath();
+  if (!FEXServerClient::SetupClient(SelfPath.value_or(argv[0]))) {
     LogMan::Msg::EFmt("FEXServerClient: Failure to setup client");
     return -1;
   }
@@ -359,7 +360,7 @@ int main(int argc, char** argv, char** const envp) {
     LogMan::Throw::UnInstallHandler();
     LogMan::Msg::UnInstallHandler();
   } else {
-    auto LogFile = OutputLog();
+    const auto& LogFile = OutputLog();
     // If stderr or stdout then we need to dup the FD
     // In some cases some applications will close stderr and stdout
     // then redirect the FD to either a log OR some cases just not use
@@ -388,7 +389,6 @@ int main(int argc, char** argv, char** const envp) {
     std::this_thread::sleep_for(std::chrono::seconds(StartupSleep()));
   }
 
-  FEXCore::Profiler::Init();
   FEXCore::Telemetry::Initialize();
 
   if (!LDPath().empty() && Program.ProgramPath.starts_with(LDPath())) {
@@ -491,6 +491,8 @@ int main(int argc, char** argv, char** const envp) {
     } while (reinterpret_cast<uintptr_t>(data) >> 32 != 0);
     free(data);
   }
+
+  FEXCore::Profiler::Init(Program.ProgramName, Program.ProgramPath);
 
   // System allocator is now system allocator or FEX
   FEXCore::Context::InitializeStaticTables(Loader.Is64BitMode() ? FEXCore::Context::MODE_64BIT : FEXCore::Context::MODE_32BIT);

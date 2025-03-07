@@ -66,11 +66,8 @@ static constexpr std::pair<std::string_view, FEXCore::Config::ConfigOption> Conf
 #include <FEXCore/Config/ConfigValues.inl>
 };
 
-void SaveLayerToJSON(const fextl::string& Filename, FEXCore::Config::Layer* const Layer) {
-  char Buffer[4096];
-  char* Dest {};
-  Dest = json_objOpen(Buffer, nullptr);
-  Dest = json_objOpen(Dest, "Config");
+static char* SaveLayerToJSON(char* JsonBuffer, const FEXCore::Config::Layer* Layer) {
+  JsonBuffer = json_objOpen(JsonBuffer, "Config");
   for (auto& it : Layer->GetOptionMap()) {
     std::string_view Name {};
     for (auto& name_it : ConfigLookup) {
@@ -80,12 +77,29 @@ void SaveLayerToJSON(const fextl::string& Filename, FEXCore::Config::Layer* cons
       }
     }
     for (auto& var : it.second) {
-      Dest = json_str(Dest, Name.data(), var.c_str());
+      JsonBuffer = json_str(JsonBuffer, Name.data(), var.c_str());
     }
   }
+  return json_objClose(JsonBuffer);
+}
+
+void SaveLayerToJSON(const fextl::string& Filename, const FEXCore::Config::Layer* Layer, const fextl::unordered_map<fextl::string, bool>& HostLibs) {
+  char Buffer[4096];
+  char* Dest {};
+  Dest = json_objOpen(Buffer, nullptr);
+
+  Dest = SaveLayerToJSON(Dest, Layer);
+
+  Dest = json_objOpen(Dest, "ThunksDB");
+  for (auto& [Name, Enabled] : HostLibs) {
+    Dest = json_int(Dest, Name.c_str(), Enabled);
+  }
   Dest = json_objClose(Dest);
+
   Dest = json_objClose(Dest);
   json_end(Dest);
+
+  LogMan::Throw::AFmt(Dest <= std::end(Buffer), "Exceeded JSON buffer size");
 
   auto File = FEXCore::File::File(Filename.c_str(),
                                   FEXCore::File::FileModes::WRITE | FEXCore::File::FileModes::CREATE | FEXCore::File::FileModes::TRUNCATE);
@@ -93,6 +107,37 @@ void SaveLayerToJSON(const fextl::string& Filename, FEXCore::Config::Layer* cons
   if (File.IsValid()) {
     File.Write(Buffer, strlen(Buffer));
   }
+}
+
+void SaveLayerToJSON(const fextl::string& Filename, const FEXCore::Config::Layer* Layer) {
+  fextl::unordered_map<fextl::string, bool> HostLibsDB;
+
+  // Load existing ThunksDB entry to persist it
+  {
+    fextl::vector<char> FileData;
+    if (!FEXCore::FileLoading::LoadFile(FileData, Filename)) {
+      goto WriteConfig;
+    }
+
+    // Find bounds of previously existing Config entry (if any)
+    FEX::JSON::JsonAllocator Pool {};
+    const json_t* json = FEX::JSON::CreateJSON(FileData, Pool);
+    if (!json) {
+      goto WriteConfig;
+    }
+
+    const json_t* ThunksDB = json_getProperty(json, "ThunksDB");
+    if (!ThunksDB) {
+      goto WriteConfig;
+    }
+
+    for (const json_t* Item = json_getChild(ThunksDB); Item != nullptr; Item = json_getSibling(Item)) {
+      HostLibsDB.emplace(json_getName(Item), (json_getInteger(Item) != 0));
+    }
+  }
+
+WriteConfig:
+  SaveLayerToJSON(Filename, Layer, HostLibsDB);
 }
 
 // Application loaders
@@ -108,7 +153,7 @@ class MainLoader final : public OptionMapper {
 public:
   explicit MainLoader(FEXCore::Config::LayerType Type);
   explicit MainLoader(fextl::string ConfigFile);
-  explicit MainLoader(FEXCore::Config::LayerType Type, const char* ConfigFile);
+  explicit MainLoader(FEXCore::Config::LayerType Type, std::string_view ConfigFile);
 
   void Load() override;
 
@@ -168,7 +213,7 @@ MainLoader::MainLoader(fextl::string ConfigFile)
   , Config {std::move(ConfigFile)} {}
 
 
-MainLoader::MainLoader(FEXCore::Config::LayerType Type, const char* ConfigFile)
+MainLoader::MainLoader(FEXCore::Config::LayerType Type, std::string_view ConfigFile)
   : OptionMapper(Type)
   , Config {ConfigFile} {}
 
@@ -259,7 +304,7 @@ fextl::unique_ptr<FEXCore::Config::Layer> CreateMainLayer(const fextl::string* F
   }
 }
 
-fextl::unique_ptr<FEXCore::Config::Layer> CreateUserOverrideLayer(const char* AppConfig) {
+fextl::unique_ptr<FEXCore::Config::Layer> CreateUserOverrideLayer(std::string_view AppConfig) {
   return fextl::make_unique<MainLoader>(FEXCore::Config::LayerType::LAYER_USER_OVERRIDE, AppConfig);
 }
 
@@ -418,8 +463,15 @@ void LoadConfig(fextl::unique_ptr<FEX::ArgLoader::ArgLoader> ArgsLoader, fextl::
   }
 
   const char* AppConfig = getenv("FEX_APP_CONFIG");
-  if (AppConfig && FHU::Filesystem::Exists(AppConfig)) {
-    FEXCore::Config::AddLayer(CreateUserOverrideLayer(AppConfig));
+  if (AppConfig) {
+    fextl::string AppConfigStr = AppConfig;
+    if (IsPortable && FHU::Filesystem::IsRelative(AppConfig)) {
+      AppConfigStr = PortableInfo.InterpreterPath + AppConfigStr;
+    }
+
+    if (FHU::Filesystem::Exists(AppConfigStr)) {
+      FEXCore::Config::AddLayer(CreateUserOverrideLayer(AppConfigStr));
+    }
   }
 
   FEXCore::Config::AddLayer(CreateEnvironmentLayer(envp));
@@ -503,6 +555,13 @@ fextl::string GetConfigDirectory(bool Global, const PortableInformation& Portabl
   const char* ConfigOverride = getenv("FEX_APP_CONFIG_LOCATION");
   if (PortableInfo.IsPortable && (Global || !ConfigOverride)) {
     return fextl::fmt::format("{}/fex-emu/", PortableInfo.InterpreterPath);
+  } else if (PortableInfo.IsPortable && ConfigOverride && !Global) {
+    fextl::string AppConfigStr = ConfigOverride;
+    if (PortableInfo.IsPortable && FHU::Filesystem::IsRelative(AppConfigStr)) {
+      AppConfigStr = PortableInfo.InterpreterPath + AppConfigStr;
+    }
+
+    return AppConfigStr;
   }
 
   fextl::string ConfigDir;

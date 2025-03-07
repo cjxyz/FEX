@@ -10,6 +10,8 @@
 #include <cstring>
 #include <stdint.h>
 
+#include "Common/VectorRegType.h"
+
 extern "C" {
 #include "SoftFloat-3e/platform.h"
 #include "SoftFloat-3e/softfloat.h"
@@ -476,6 +478,12 @@ struct FEX_PACKED X80SoftFloat {
     return FEXCore::BitCast<double>(Result);
   }
 
+  FEXCore::VectorRegType ToVector() const {
+    FEXCore::VectorRegType Ret {};
+    memcpy(&Ret, this, sizeof(*this));
+    return Ret;
+  }
+
   LIBRARY_PRECISION ToFMax(softfloat_state* state) const {
 #ifdef _WIN32
     return ToF64(state);
@@ -567,10 +575,18 @@ struct FEX_PACKED X80SoftFloat {
     *this = i32_to_extF80(rhs);
   }
 
+  X80SoftFloat(const FEXCore::VectorRegType rhs) {
+    memcpy(this, &rhs, sizeof(*this));
+  }
+
   void operator=(extFloat80_t rhs) {
     Significand = rhs.signif;
     Exponent = rhs.signExp & 0x7FFF;
     Sign = rhs.signExp >> 15;
+  }
+
+  operator FEXCore::VectorRegType() const {
+    return ToVector();
   }
 
   operator extFloat80_t() const {

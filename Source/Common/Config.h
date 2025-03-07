@@ -19,7 +19,8 @@ public:
 protected:
 };
 
-void SaveLayerToJSON(const fextl::string& Filename, FEXCore::Config::Layer* const Layer);
+void SaveLayerToJSON(const fextl::string& Filename, const FEXCore::Config::Layer* Layer);
+void SaveLayerToJSON(const fextl::string& Filename, const FEXCore::Config::Layer* Layer, const fextl::unordered_map<fextl::string, bool>& HostLibs);
 
 struct ApplicationNames {
   // This is the full path to the program (if it exists).
@@ -76,7 +77,7 @@ fextl::unique_ptr<FEXCore::Config::Layer> CreateGlobalMainLayer();
  * @return unique_ptr for that layer
  */
 fextl::unique_ptr<FEXCore::Config::Layer> CreateMainLayer(const fextl::string* File = nullptr);
-fextl::unique_ptr<FEXCore::Config::Layer> CreateUserOverrideLayer(const char* AppConfig);
+fextl::unique_ptr<FEXCore::Config::Layer> CreateUserOverrideLayer(std::string_view AppConfig);
 
 /**
  * @brief Create an application configuration loader

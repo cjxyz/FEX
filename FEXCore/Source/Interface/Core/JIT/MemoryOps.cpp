@@ -642,10 +642,10 @@ ARMEmitter::SVEMemOperand Arm64JITCore::GenerateSVEMemOperand(IR::OpSize AccessS
     }
 
     const auto SignedConst = static_cast<int64_t>(Const);
-    const auto SignedAVXSize = static_cast<int64_t>(Core::CPUState::XMM_AVX_REG_SIZE);
+    const auto SignedSVESize = static_cast<int64_t>(HostSupportsSVE256 ? Core::CPUState::XMM_AVX_REG_SIZE : Core::CPUState::XMM_SSE_REG_SIZE);
 
-    const auto IsCleanlyDivisible = (SignedConst % SignedAVXSize) == 0;
-    const auto Index = SignedConst / SignedAVXSize;
+    const auto IsCleanlyDivisible = (SignedConst % SignedSVESize) == 0;
+    const auto Index = SignedConst / SignedSVESize;
 
     // SVE's immediate variants of load stores are quite limited in terms
     // of immediate range. They also operate on a by-vector-length basis.
@@ -759,7 +759,8 @@ DEF_OP(LoadMemTSO) {
     const auto Dst = GetReg(Node);
     uint64_t Offset = 0;
     if (!Op->Offset.IsInvalid()) {
-      LOGMAN_THROW_A_FMT(IsInlineConstant(Op->Offset, &Offset), "expected immediate");
+      [[maybe_unused]] bool IsInline = IsInlineConstant(Op->Offset, &Offset);
+      LOGMAN_THROW_A_FMT(IsInline, "expected immediate");
     }
 
     if (OpSize == IR::OpSize::i8Bit) {
@@ -891,7 +892,15 @@ DEF_OP(VLoadVectorMasked) {
     auto WorkingReg = TMP1;
     auto TempMemReg = MemReg;
     movi(ARMEmitter::SubRegSize::i64Bit, TempDst.Q(), 0);
-    LOGMAN_THROW_A_FMT(Op->Offset.IsInvalid(), "Complex addressing requested and not supported!");
+    uint64_t Const {};
+    if (Op->Offset.IsInvalid()) {
+      // Intentional no-op.
+    } else if (IsInlineConstant(Op->Offset, &Const)) {
+      TempMemReg = TMP2;
+      add(ARMEmitter::Size::i64Bit, TMP2, MemReg, Const);
+    } else {
+      LOGMAN_MSG_A_FMT("Complex addressing requested and not supported!");
+    }
 
     const uint64_t ElementSizeInBits = IR::OpSizeAsBits(IROp->ElementSize);
     for (size_t i = 0; i < NumElements; ++i) {
@@ -983,7 +992,16 @@ DEF_OP(VStoreVectorMasked) {
     // Use VTMP1 as the temporary destination
     auto WorkingReg = TMP1;
     auto TempMemReg = MemReg;
-    LOGMAN_THROW_A_FMT(Op->Offset.IsInvalid(), "Complex addressing requested and not supported!");
+
+    uint64_t Const {};
+    if (Op->Offset.IsInvalid()) {
+      // Intentional no-op.
+    } else if (IsInlineConstant(Op->Offset, &Const)) {
+      TempMemReg = TMP2;
+      add(ARMEmitter::Size::i64Bit, TMP2, MemReg, Const);
+    } else {
+      LOGMAN_MSG_A_FMT("Complex addressing requested and not supported!");
+    }
 
     const uint64_t ElementSizeInBits = IR::OpSizeAsBits(IROp->ElementSize);
     for (size_t i = 0; i < NumElements; ++i) {
@@ -1547,7 +1565,7 @@ DEF_OP(StoreMem) {
   const auto MemSrc = GenerateMemOperand(OpSize, MemReg, Op->Offset, Op->OffsetType, Op->OffsetScale);
 
   if (Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src = GetReg(Op->Value.ID());
+    const auto Src = GetZeroableReg(Op->Value);
     switch (OpSize) {
     case IR::OpSize::i8Bit: strb(Src, MemSrc); break;
     case IR::OpSize::i16Bit: strh(Src, MemSrc); break;
@@ -1658,8 +1676,8 @@ DEF_OP(StoreMemPair) {
   const auto Addr = GetReg(Op->Addr.ID());
 
   if (Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src1 = GetReg(Op->Value1.ID());
-    const auto Src2 = GetReg(Op->Value2.ID());
+    const auto Src1 = GetZeroableReg(Op->Value1);
+    const auto Src2 = GetZeroableReg(Op->Value2);
     switch (OpSize) {
     case IR::OpSize::i32Bit: stp<ARMEmitter::IndexType::OFFSET>(Src1.W(), Src2.W(), Addr, Op->Offset); break;
     case IR::OpSize::i64Bit: stp<ARMEmitter::IndexType::OFFSET>(Src1.X(), Src2.X(), Addr, Op->Offset); break;
@@ -1691,10 +1709,11 @@ DEF_OP(StoreMemTSO) {
   }
 
   if (CTX->HostFeatures.SupportsTSOImm9 && Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src = GetReg(Op->Value.ID());
+    const auto Src = GetZeroableReg(Op->Value);
     uint64_t Offset = 0;
     if (!Op->Offset.IsInvalid()) {
-      LOGMAN_THROW_A_FMT(IsInlineConstant(Op->Offset, &Offset), "expected immediate");
+      [[maybe_unused]] bool IsInline = IsInlineConstant(Op->Offset, &Offset);
+      LOGMAN_THROW_A_FMT(IsInline, "expected immediate");
     }
 
     if (OpSize == IR::OpSize::i8Bit) {
@@ -1711,7 +1730,7 @@ DEF_OP(StoreMemTSO) {
       }
     }
   } else if (Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src = GetReg(Op->Value.ID());
+    const auto Src = GetZeroableReg(Op->Value);
 
     if (OpSize == IR::OpSize::i8Bit) {
       // 8bit load is always aligned to natural alignment
@@ -1763,7 +1782,7 @@ DEF_OP(MemSet) {
   const bool IsAtomic = CTX->IsMemcpyAtomicTSOEnabled();
   const auto Size = IR::OpSizeToSize(Op->Size);
   const auto MemReg = GetReg(Op->Addr.ID());
-  const auto Value = GetReg(Op->Value.ID());
+  const auto Value = GetZeroableReg(Op->Value);
   const auto Length = GetReg(Op->Length.ID());
   const auto Dst = GetReg(Node);
 
@@ -2312,7 +2331,7 @@ DEF_OP(ParanoidStoreMemTSO) {
   auto MemReg = GetReg(Op->Addr.ID());
 
   if (CTX->HostFeatures.SupportsTSOImm9 && Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src = GetReg(Op->Value.ID());
+    const auto Src = GetZeroableReg(Op->Value);
     uint64_t Offset = 0;
     if (!Op->Offset.IsInvalid()) {
       if (!IsInlineConstant(Op->Offset, &Offset)) {
@@ -2332,7 +2351,7 @@ DEF_OP(ParanoidStoreMemTSO) {
       }
     }
   } else if (Op->Class == FEXCore::IR::GPRClass) {
-    const auto Src = GetReg(Op->Value.ID());
+    const auto Src = GetZeroableReg(Op->Value);
     MemReg = ApplyMemOperand(OpSize, MemReg, TMP1, Op->Offset, Op->OffsetType, Op->OffsetScale);
     switch (OpSize) {
     case IR::OpSize::i8Bit: stlrb(Src, MemReg); break;

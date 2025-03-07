@@ -883,6 +883,7 @@ uint64_t UnimplementedSyscallSafe(FEXCore::Core::CpuStateFrame* Frame, uint64_t 
 }
 
 void SyscallHandler::LockBeforeFork(FEXCore::Core::InternalThreadState* Thread) {
+  TM.LockBeforeFork();
   Thread->CTX->LockBeforeFork(Thread);
   VMATracking.Mutex.lock();
 }
@@ -937,7 +938,7 @@ SyscallHandler::GenerateMap(const std::string_view& GuestBinaryFile, const std::
     return {};
   }
 
-  const auto GuestSourceFile = fextl::fmt::format("{}/{}.src", FexSrcPath, GuestBinaryFileId);
+  auto GuestSourceFile = fextl::fmt::format("{}/{}.src", FexSrcPath, GuestBinaryFileId);
 
   struct stat GuestSourceFileStat;
 
@@ -1060,7 +1061,7 @@ DoGenerate:
 
     auto rv = fextl::make_unique<FEXCore::HLE::SourcecodeMap>();
 
-    rv->SourceFile = GuestSourceFile;
+    rv->SourceFile = std::move(GuestSourceFile);
 
     auto EndSymbol = [&] {
       if (LastSymbolOffset) {

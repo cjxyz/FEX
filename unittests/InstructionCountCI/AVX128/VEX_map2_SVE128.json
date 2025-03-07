@@ -49,7 +49,7 @@
       ]
     },
     "vmaskmovps ymm0, ymm1, [rax]": {
-      "ExpectedInstructionCount": 9,
+      "ExpectedInstructionCount": 8,
       "Comment": [
         "Map 2 0b01 0x2c 256-bit"
       ],
@@ -58,9 +58,8 @@
         "mrs x20, nzcv",
         "cmplt p0.s, p6/z, z17.s, #0",
         "ld1w {z16.s}, p0/z, [x4]",
-        "add x21, x4, #0x10 (16)",
         "cmplt p0.s, p6/z, z2.s, #0",
-        "ld1w {z2.s}, p0/z, [x21]",
+        "ld1w {z2.s}, p0/z, [x4, #1, mul vl]",
         "msr nzcv, x20",
         "str q2, [x28, #16]"
       ]
@@ -80,7 +79,7 @@
       ]
     },
     "vmaskmovpd ymm0, ymm1, [rax]": {
-      "ExpectedInstructionCount": 9,
+      "ExpectedInstructionCount": 8,
       "Comment": [
         "Map 2 0b01 0x2d 256-bit"
       ],
@@ -89,9 +88,8 @@
         "mrs x20, nzcv",
         "cmplt p0.d, p6/z, z17.d, #0",
         "ld1d {z16.d}, p0/z, [x4]",
-        "add x21, x4, #0x10 (16)",
         "cmplt p0.d, p6/z, z2.d, #0",
-        "ld1d {z2.d}, p0/z, [x21]",
+        "ld1d {z2.d}, p0/z, [x4, #1, mul vl]",
         "msr nzcv, x20",
         "str q2, [x28, #16]"
       ]
@@ -109,7 +107,7 @@
       ]
     },
     "vmaskmovps [rax], ymm0, ymm1": {
-      "ExpectedInstructionCount": 9,
+      "ExpectedInstructionCount": 8,
       "Comment": [
         "Map 2 0b01 0x2e 256-bit"
       ],
@@ -119,9 +117,8 @@
         "mrs x20, nzcv",
         "cmplt p0.s, p6/z, z16.s, #0",
         "st1w {z17.s}, p0, [x4]",
-        "add x21, x4, #0x10 (16)",
         "cmplt p0.s, p6/z, z2.s, #0",
-        "st1w {z3.s}, p0, [x21]",
+        "st1w {z3.s}, p0, [x4, #1, mul vl]",
         "msr nzcv, x20"
       ]
     },
@@ -138,7 +135,7 @@
       ]
     },
     "vmaskmovpd [rax], ymm0, ymm1": {
-      "ExpectedInstructionCount": 9,
+      "ExpectedInstructionCount": 8,
       "Comment": [
         "Map 2 0b01 0x2f 256-bit"
       ],
@@ -148,9 +145,8 @@
         "mrs x20, nzcv",
         "cmplt p0.d, p6/z, z16.d, #0",
         "st1d {z17.d}, p0, [x4]",
-        "add x21, x4, #0x10 (16)",
         "cmplt p0.d, p6/z, z2.d, #0",
-        "st1d {z3.d}, p0, [x21]",
+        "st1d {z3.d}, p0, [x4, #1, mul vl]",
         "msr nzcv, x20"
       ]
     },
@@ -2850,7 +2846,7 @@
         "Map 2 0b01 0x96 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2400]",
+        "ldr q2, [x28, #2432]",
         "eor v2.16b, v17.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.4s, v16.4s, v18.4s",
@@ -2868,7 +2864,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2400]",
+        "ldr q5, [x28, #2432]",
         "eor v6.16b, v17.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.4s, v16.4s, v18.4s",
@@ -2884,7 +2880,7 @@
         "Map 2 0b01 0x96 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2432]",
+        "ldr q2, [x28, #2464]",
         "eor v2.16b, v17.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.2d, v16.2d, v18.2d",
@@ -2902,7 +2898,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2432]",
+        "ldr q5, [x28, #2464]",
         "eor v6.16b, v17.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.2d, v16.2d, v18.2d",
@@ -2918,7 +2914,7 @@
         "Map 2 0b01 0x97 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2464]",
+        "ldr q2, [x28, #2496]",
         "eor v2.16b, v17.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.4s, v16.4s, v18.4s",
@@ -2936,7 +2932,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2464]",
+        "ldr q5, [x28, #2496]",
         "eor v6.16b, v17.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.4s, v16.4s, v18.4s",
@@ -2952,7 +2948,7 @@
         "Map 2 0b01 0x97 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2496]",
+        "ldr q2, [x28, #2528]",
         "eor v2.16b, v17.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.2d, v16.2d, v18.2d",
@@ -2970,7 +2966,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2496]",
+        "ldr q5, [x28, #2528]",
         "eor v6.16b, v17.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.2d, v16.2d, v18.2d",
@@ -3938,7 +3934,7 @@
         "Map 2 0b01 0xa6 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2400]",
+        "ldr q2, [x28, #2432]",
         "eor v2.16b, v18.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.4s, v17.4s, v16.4s",
@@ -3956,7 +3952,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2400]",
+        "ldr q5, [x28, #2432]",
         "eor v6.16b, v18.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.4s, v17.4s, v16.4s",
@@ -3972,7 +3968,7 @@
         "Map 2 0b01 0xa6 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2432]",
+        "ldr q2, [x28, #2464]",
         "eor v2.16b, v18.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.2d, v17.2d, v16.2d",
@@ -3990,7 +3986,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2432]",
+        "ldr q5, [x28, #2464]",
         "eor v6.16b, v18.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.2d, v17.2d, v16.2d",
@@ -4006,7 +4002,7 @@
         "Map 2 0b01 0xa7 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2464]",
+        "ldr q2, [x28, #2496]",
         "eor v2.16b, v18.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.4s, v17.4s, v16.4s",
@@ -4024,7 +4020,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2464]",
+        "ldr q5, [x28, #2496]",
         "eor v6.16b, v18.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.4s, v17.4s, v16.4s",
@@ -4040,7 +4036,7 @@
         "Map 2 0b01 0xa7 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2496]",
+        "ldr q2, [x28, #2528]",
         "eor v2.16b, v18.16b, v2.16b",
         "mov v0.16b, v2.16b",
         "fmla v0.2d, v17.2d, v16.2d",
@@ -4058,7 +4054,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2496]",
+        "ldr q5, [x28, #2528]",
         "eor v6.16b, v18.16b, v5.16b",
         "mov v0.16b, v6.16b",
         "fmla v0.2d, v17.2d, v16.2d",
@@ -4074,7 +4070,7 @@
         "Map 2 0b01 0xb6 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2400]",
+        "ldr q2, [x28, #2432]",
         "eor v2.16b, v16.16b, v2.16b",
         "mov v16.16b, v2.16b",
         "fmla v16.4s, v17.4s, v18.4s",
@@ -4091,7 +4087,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2400]",
+        "ldr q5, [x28, #2432]",
         "eor v6.16b, v16.16b, v5.16b",
         "mov v16.16b, v6.16b",
         "fmla v16.4s, v17.4s, v18.4s",
@@ -4106,7 +4102,7 @@
         "Map 2 0b01 0xb6 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2432]",
+        "ldr q2, [x28, #2464]",
         "eor v2.16b, v16.16b, v2.16b",
         "mov v16.16b, v2.16b",
         "fmla v16.2d, v17.2d, v18.2d",
@@ -4123,7 +4119,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2432]",
+        "ldr q5, [x28, #2464]",
         "eor v6.16b, v16.16b, v5.16b",
         "mov v16.16b, v6.16b",
         "fmla v16.2d, v17.2d, v18.2d",
@@ -4138,7 +4134,7 @@
         "Map 2 0b01 0xb7 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2464]",
+        "ldr q2, [x28, #2496]",
         "eor v2.16b, v16.16b, v2.16b",
         "mov v16.16b, v2.16b",
         "fmla v16.4s, v17.4s, v18.4s",
@@ -4155,7 +4151,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2464]",
+        "ldr q5, [x28, #2496]",
         "eor v6.16b, v16.16b, v5.16b",
         "mov v16.16b, v6.16b",
         "fmla v16.4s, v17.4s, v18.4s",
@@ -4170,7 +4166,7 @@
         "Map 2 0b01 0xb7 128-bit"
       ],
       "ExpectedArm64ASM": [
-        "ldr q2, [x28, #2496]",
+        "ldr q2, [x28, #2528]",
         "eor v2.16b, v16.16b, v2.16b",
         "mov v16.16b, v2.16b",
         "fmla v16.2d, v17.2d, v18.2d",
@@ -4187,7 +4183,7 @@
         "ldr q2, [x28, #16]",
         "ldr q3, [x28, #32]",
         "ldr q4, [x28, #48]",
-        "ldr q5, [x28, #2496]",
+        "ldr q5, [x28, #2528]",
         "eor v6.16b, v16.16b, v5.16b",
         "mov v16.16b, v6.16b",
         "fmla v16.2d, v17.2d, v18.2d",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "Main.h"
 
+#include <Common/Async.h>
 #include <Common/Config.h>
 #include <Common/FileFormatCheck.h>
 #include <FEXCore/fextl/memory.h>
@@ -26,6 +27,32 @@ inline fextl::string string_from_path(const std::filesystem::path& Path) {
 static fextl::unique_ptr<FEXCore::Config::Layer> LoadedConfig {};
 static fextl::map<FEXCore::Config::ConfigOption, std::pair<std::string, std::string_view>> ConfigToNameLookup;
 static fextl::map<std::string, FEXCore::Config::ConfigOption> NameToConfigLookup;
+
+#include "Common/JSONPool.h"
+#include <FEXCore/Utils/FileLoading.h>
+
+static void LoadThunkDatabase(fextl::unordered_map<fextl::string, bool>& HostLibsDB, bool Global) {
+  auto ThunkDBPath = FEXCore::Config::GetConfigDirectory(Global) + "ThunksDB.json";
+  fextl::vector<char> FileData;
+  if (!FEXCore::FileLoading::LoadFile(FileData, ThunkDBPath)) {
+    return;
+  }
+
+  FEX::JSON::JsonAllocator Pool {};
+  const json_t* json = FEX::JSON::CreateJSON(FileData, Pool);
+  if (!json) {
+    return;
+  }
+
+  const json_t* DB = json_getProperty(json, "DB");
+  if (!DB || JSON_OBJ != json_getType(DB)) {
+    return;
+  }
+
+  for (const json_t* Library = json_getChild(DB); Library != nullptr; Library = json_getSibling(Library)) {
+    HostLibsDB[json_getName(Library)] = false;
+  }
+}
 
 ConfigModel::ConfigModel() {
   setItemRoleNames(QHash<int, QByteArray> {{Qt::DisplayRole, "display"}, {Qt::UserRole + 1, "optionType"}, {Qt::UserRole + 2, "optionValue"}});
@@ -187,8 +214,66 @@ static void ConfigInit(fextl::string ConfigFilename) {
   }
 }
 
+HostLibsModel::HostLibsModel() {
+  // Load list of available libraries
+  LoadThunkDatabase(HostLibsDB, true);
+  LoadThunkDatabase(HostLibsDB, false);
+}
+
+void HostLibsModel::Reload(const fextl::string& Path) {
+  for (auto& [_, Enabled] : HostLibsDB) {
+    Enabled = false;
+  }
+
+  {
+    fextl::vector<char> FileData;
+    if (!FEXCore::FileLoading::LoadFile(FileData, Path)) {
+      goto RenderItems;
+    }
+
+    FEX::JSON::JsonAllocator Pool {};
+    const json_t* json = FEX::JSON::CreateJSON(FileData, Pool);
+    if (!json) {
+      goto RenderItems;
+    }
+
+    const json_t* ThunksDB = json_getProperty(json, "ThunksDB");
+    if (!ThunksDB) {
+      goto RenderItems;
+    }
+
+    for (const json_t* Item = json_getChild(ThunksDB); Item != nullptr; Item = json_getSibling(Item)) {
+      auto DBObject = HostLibsDB.find(json_getName(Item));
+      if (DBObject != HostLibsDB.end()) {
+        DBObject->second = (json_getInteger(Item) != 0);
+      }
+    }
+  }
+
+RenderItems:
+  beginResetModel();
+  removeRows(0, rowCount());
+  for (auto& [Name, Enabled] : HostLibsDB) {
+    auto Item = new QStandardItem(QString::fromUtf8(Name.c_str()));
+    Item->setData(Enabled, Qt::CheckStateRole);
+    appendRow(Item);
+  }
+  endResetModel();
+}
+
+QHash<int, QByteArray> HostLibsModel::roleNames() const {
+  auto ret = QStandardItemModel::roleNames();
+  ret[Qt::CheckStateRole] = "checked";
+  return ret;
+}
+
+bool HostLibsModel::setData(const QModelIndex& index, const QVariant& value, int role) {
+  std::next(HostLibsDB.begin(), index.row())->second = value.toBool();
+  return QStandardItemModel::setData(index, value, role);
+}
+
 RootFSModel::RootFSModel() {
-  INotifyFD = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+  auto INotifyFD = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 
   fextl::string RootFS = FEXCore::Config::GetDataDirectory(false) + "RootFS/";
   int LocalFolderWD = inotify_add_watch(INotifyFD, RootFS.c_str(), IN_CREATE | IN_DELETE);
@@ -196,7 +281,8 @@ RootFSModel::RootFSModel() {
   RootFS = FEXCore::Config::GetDataDirectory(true) + "RootFS/";
   int GlobalFolderWD = inotify_add_watch(INotifyFD, RootFS.c_str(), IN_CREATE | IN_DELETE);
   if (INotifyFD != -1 && (LocalFolderWD != -1 || GlobalFolderWD != -1)) {
-    Thread = std::thread {&RootFSModel::INotifyThreadFunc, this};
+    INotifyReactor.enable_async_stop();
+    Thread = std::thread {&RootFSModel::INotifyThreadFunc, this, INotifyFD};
   } else {
     qWarning() << "Could not set up inotify. RootFS folder won't be monitored for changes.";
   }
@@ -206,10 +292,7 @@ RootFSModel::RootFSModel() {
 }
 
 RootFSModel::~RootFSModel() {
-  close(INotifyFD);
-  INotifyFD = -1;
-
-  ExitRequest.count_down();
+  INotifyReactor.stop_async();
   Thread.join();
 }
 
@@ -261,39 +344,22 @@ QUrl RootFSModel::getBaseUrl() const {
   return QUrl::fromLocalFile(QString::fromStdString(FEXCore::Config::GetDataDirectory().c_str()) + "RootFS/");
 }
 
-void RootFSModel::INotifyThreadFunc() {
-  while (!ExitRequest.try_wait()) {
+void RootFSModel::INotifyThreadFunc(int INotifyFD) {
+  fasio::posix_descriptor INotify {INotifyReactor, INotifyFD};
+
+  INotify.async_wait([this, INotifyFD](fasio::error ec) {
+    // Spin through the events, we don't actually care what they are
     constexpr size_t DATA_SIZE = (16 * (sizeof(struct inotify_event) + NAME_MAX + 1));
     char buf[DATA_SIZE];
-    int Ret {};
-    struct pollfd watch_fd = {
-      .fd = INotifyFD,
-      .events = POLLIN,
-      .revents = 0,
-    };
-    do {
-      // 50 ms
-      struct timespec tv {
-        .tv_sec = 0, .tv_nsec = 50'000'000,
-      };
-
-      // Reset revents.
-      watch_fd.revents = 0;
-      Ret = ppoll(&watch_fd, 1, &tv, nullptr);
-    } while (Ret == 0 && INotifyFD != -1);
-
-    if (Ret == -1 || INotifyFD == -1) {
-      // Just return on error
-      return;
-    }
-
-    // Spin through the events, we don't actually care what they are
     while (read(INotifyFD, buf, DATA_SIZE) > 0)
       ;
 
     // Queue update to the data model
     QMetaObject::invokeMethod(this, "Reload");
-  }
+    return fasio::post_callback::repeat;
+  });
+
+  INotifyReactor.run();
 }
 
 // Returns true on success
@@ -333,7 +399,10 @@ static bool OpenFile(fextl::string Filename) {
 }
 
 ConfigRuntime::ConfigRuntime(const QString& ConfigFilename) {
+  HostLibs.Reload(ConfigFilename.toStdString().c_str());
+
   qmlRegisterSingletonInstance<ConfigModel>("FEX.ConfigModel", 1, 0, "ConfigModel", &ConfigModelInst);
+  qmlRegisterSingletonInstance<HostLibsModel>("FEX.HostLibsModel", 1, 0, "HostLibsModel", &HostLibs);
   qmlRegisterSingletonInstance<RootFSModel>("FEX.RootFSModel", 1, 0, "RootFSModel", &RootFSList);
   Engine.load(QUrl("qrc:/main.qml"));
 
@@ -353,7 +422,7 @@ ConfigRuntime::ConfigRuntime(const QString& ConfigFilename) {
 
 void ConfigRuntime::onSave(const QUrl& Filename) {
   qInfo() << "Saving to" << Filename.toLocalFile().toStdString().c_str();
-  FEX::Config::SaveLayerToJSON(Filename.toLocalFile().toStdString().c_str(), LoadedConfig.get());
+  FEX::Config::SaveLayerToJSON(Filename.toLocalFile().toStdString().c_str(), LoadedConfig.get(), HostLibs.HostLibsDB);
 }
 
 void ConfigRuntime::onLoad(const QUrl& Filename) {
@@ -372,6 +441,7 @@ void ConfigRuntime::onLoad(const QUrl& Filename) {
 
   ConfigModelInst.Reload();
   RootFSList.Reload();
+  HostLibs.Reload(Filename.toLocalFile().toStdString().c_str());
 
   QMetaObject::invokeMethod(Window, "refreshUI");
 }

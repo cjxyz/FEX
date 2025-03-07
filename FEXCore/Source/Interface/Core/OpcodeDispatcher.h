@@ -302,6 +302,7 @@ public:
   void MOVVectorUnalignedOp(OpcodeArgs);
   void MOVVectorNTOp(OpcodeArgs);
   void ALUOp(OpcodeArgs, FEXCore::IR::IROps ALUIROp, FEXCore::IR::IROps AtomicFetchOp, unsigned SrcIdx);
+  void LSLOp(OpcodeArgs);
   void INTOp(OpcodeArgs);
   void SyscallOp(OpcodeArgs, bool IsSyscallInst);
   void ThunkOp(OpcodeArgs);
@@ -417,6 +418,7 @@ public:
   void EnterOp(OpcodeArgs);
 
   void SGDTOp(OpcodeArgs);
+  void SIDTOp(OpcodeArgs);
   void SMSWOp(OpcodeArgs);
 
   enum class VectorOpType {
@@ -434,6 +436,7 @@ public:
 
   void VectorALUROp(OpcodeArgs, IROps IROp, IR::OpSize ElementSize);
   void VectorUnaryOp(OpcodeArgs, IROps IROp, IR::OpSize ElementSize);
+  void RSqrt3DNowOp(OpcodeArgs, bool Duplicate);
   template<FEXCore::IR::IROps IROp, IR::OpSize ElementSize>
   void VectorUnaryDuplicateOp(OpcodeArgs);
 
@@ -899,6 +902,15 @@ public:
     Pair.Low = R;
     Pair.High = LoadZeroVector(OpSize::i128Bit);
     return Pair;
+  }
+
+  Ref SHADataShuffle(Ref Src) {
+    // SHA data shuffle matches PSHUFD shuffle where elements are inverted.
+    // Because this shuffle mask gets reused multiple times per instruction, it's always a win to load the mask once and reuse it.
+    const uint32_t Shuffle = 0b00'01'10'11;
+    auto LookupIndexes =
+      LoadAndCacheIndexedNamedVectorConstant(OpSize::i128Bit, FEXCore::IR::IndexNamedVectorConstant::INDEXED_NAMED_VECTOR_PSHUFD, Shuffle * 16);
+    return _VTBL1(OpSize::i128Bit, Src, LookupIndexes);
   }
 
   RefPair AVX128_LoadSource_WithOpSize(const X86Tables::DecodedOp& Op, const X86Tables::DecodedOperand& Operand, uint32_t Flags,

@@ -4,19 +4,13 @@
 
 #include "ArchHelpers/UContext.h"
 #include "CodeLoader.h"
-#include "Common/Config.h"
 #include "Common/FDUtils.h"
 #include "FEXCore/Utils/Allocator.h"
 #include "LinuxSyscalls/Syscalls.h"
 #include "VDSO_Emulation.h"
 #include "Linux/Utils/ELFParser.h"
-#include "Linux/Utils/ELFSymbolDatabase.h"
 
-#include <array>
-#include <bitset>
-#include <cassert>
 #include <cstring>
-#include <random>
 
 #include <FEXCore/Core/CoreState.h>
 #include <FEXCore/Utils/MathUtils.h>
@@ -233,7 +227,7 @@ public:
 
   ELFCodeLoader(const fextl::string& Filename, int ProgramFDFromEnv, const fextl::string& RootFS,
                 [[maybe_unused]] const fextl::vector<fextl::string>& args, const fextl::vector<fextl::string>& ParsedArgs,
-                char** const envp = nullptr, FEXCore::Config::Value<fextl::string>* AdditionalEnvp = nullptr)
+                char** const envp = nullptr, FEXCore::Config::Value<FEXCore::Config::DefaultValues::Type::StringArrayType>* AdditionalEnvp = nullptr)
     : Args {args} {
 
     bool LoadedWithFD = false;
@@ -564,21 +558,21 @@ public:
     // All done
 
     // Setup AuxVars
-    AuxVariables.emplace_back(auxv_t {11, getauxval(AT_UID)});          // AT_UID
-    AuxVariables.emplace_back(auxv_t {12, getauxval(AT_EUID)});         // AT_EUID
-    AuxVariables.emplace_back(auxv_t {13, getauxval(AT_GID)});          // AT_GID
-    AuxVariables.emplace_back(auxv_t {14, getauxval(AT_EGID)});         // AT_EGID
-    AuxVariables.emplace_back(auxv_t {17, getauxval(AT_CLKTCK)});       // AT_CLKTIK
-    AuxVariables.emplace_back(auxv_t {6, 0x1000});                      // AT_PAGESIZE
-    AuxRandom = &AuxVariables.emplace_back(auxv_t {25, ~0ULL});         // AT_RANDOM
-    AuxVariables.emplace_back(auxv_t {23, getauxval(AT_SECURE)});       // AT_SECURE
-    AuxVariables.emplace_back(auxv_t {8, 0});                           // AT_FLAGS
-    AuxVariables.emplace_back(auxv_t {5, MainElf.phdrs.size()});        // AT_PHNUM
-    AuxVariables.emplace_back(auxv_t {16, HWCap});                      // AT_HWCAP
-    AuxVariables.emplace_back(auxv_t {26, HWCap2});                     // AT_HWCAP2
-    AuxVariables.emplace_back(auxv_t {51, CalculateSignalStackSize()}); // AT_MINSIGSTKSZ
-    AuxPlatform = &AuxVariables.emplace_back(auxv_t {24, ~0ULL});       // AT_PLATFORM
-    AuxExecFN = &AuxVariables.emplace_back(auxv_t {AT_EXECFN, ~0ULL});  // AT_EXECFN
+    AuxVariables.emplace_back(auxv_t {11, getauxval(AT_UID)});            // AT_UID
+    AuxVariables.emplace_back(auxv_t {12, getauxval(AT_EUID)});           // AT_EUID
+    AuxVariables.emplace_back(auxv_t {13, getauxval(AT_GID)});            // AT_GID
+    AuxVariables.emplace_back(auxv_t {14, getauxval(AT_EGID)});           // AT_EGID
+    AuxVariables.emplace_back(auxv_t {17, getauxval(AT_CLKTCK)});         // AT_CLKTIK
+    AuxVariables.emplace_back(auxv_t {6, FEXCore::Utils::FEX_PAGE_SIZE}); // AT_PAGESIZE
+    AuxRandom = &AuxVariables.emplace_back(auxv_t {25, ~0ULL});           // AT_RANDOM
+    AuxVariables.emplace_back(auxv_t {23, getauxval(AT_SECURE)});         // AT_SECURE
+    AuxVariables.emplace_back(auxv_t {8, 0});                             // AT_FLAGS
+    AuxVariables.emplace_back(auxv_t {5, MainElf.phdrs.size()});          // AT_PHNUM
+    AuxVariables.emplace_back(auxv_t {16, HWCap});                        // AT_HWCAP
+    AuxVariables.emplace_back(auxv_t {26, HWCap2});                       // AT_HWCAP2
+    AuxVariables.emplace_back(auxv_t {51, CalculateSignalStackSize()});   // AT_MINSIGSTKSZ
+    AuxPlatform = &AuxVariables.emplace_back(auxv_t {24, ~0ULL});         // AT_PLATFORM
+    AuxExecFN = &AuxVariables.emplace_back(auxv_t {AT_EXECFN, ~0ULL});    // AT_EXECFN
 
     if (Is64BitMode()) {
       AuxVariables.emplace_back(auxv_t {4, 0x38}); // AT_PHENT
