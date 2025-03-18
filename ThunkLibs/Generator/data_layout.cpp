@@ -126,7 +126,7 @@ ComputeDataLayout(const clang::ASTContext& context, const std::unordered_map<con
         }
       }
 
-      info.members.push_back(member_info);
+      info.members.push_back(std::move(member_info));
     }
   }
 
@@ -262,7 +262,7 @@ TypeCompatibility DataLayoutCompareAction::GetTypeCompatibility(const clang::AST
   auto type_name = get_type_name(context, type);
   // Look up the same type name in the guest map,
   // unless it's an integer (which is mapped to fixed-size uintX_t types)
-  auto guest_info = guest_abi.at(!type->isIntegerType() ? type_name : get_fixed_size_int_name(type, context));
+  auto guest_info = guest_abi.at(!type->isIntegerType() ? std::move(type_name) : get_fixed_size_int_name(type, context));
   auto& host_info = host_abi.at(type->isBuiltinType() ? type : context.getCanonicalType(type));
 
   const bool is_32bit = (guest_abi.pointer_size == 4);
@@ -309,15 +309,15 @@ TypeCompatibility DataLayoutCompareAction::GetTypeCompatibility(const clang::AST
         host_member_type = context.getCanonicalType(array_type->getElementType().getTypePtr());
       }
 
-      if (host_member_type->isPointerType()) {
+      if (types.at(type).UsesCustomRepackFor(host_member_field)) {
+        member_compat.push_back(TypeCompatibility::Repackable);
+        continue;
+      } else if (host_member_type->isPointerType()) {
         // Automatic repacking of pointers to non-compatible types is only possible if:
         // * Pointee is fully compatible, or
         // * Pointer member is annotated
-        // TODO: Don't restrict this to structure types. it applies to pointers to builtin types too!
         auto host_member_pointee_type = context.getCanonicalType(host_member_type->getPointeeType().getTypePtr());
-        if (types.at(type).UsesCustomRepackFor(host_member_field)) {
-          member_compat.push_back(TypeCompatibility::Repackable);
-        } else if (types.contains(host_member_pointee_type) && types.at(host_member_pointee_type).assumed_compatible) {
+        if (types.contains(host_member_pointee_type) && types.at(host_member_pointee_type).assumed_compatible) {
           // Pointee doesn't need repacking, but pointer needs extending on 32-bit
           member_compat.push_back(is_32bit ? TypeCompatibility::Repackable : TypeCompatibility::Full);
         } else if (host_member_pointee_type->isPointerType()) {
