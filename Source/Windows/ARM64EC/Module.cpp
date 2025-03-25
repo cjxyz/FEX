@@ -24,6 +24,7 @@ $end_info$
 #include <FEXCore/Utils/ArchHelpers/Arm64.h>
 #include <FEXCore/Utils/MathUtils.h>
 #include <FEXCore/Utils/TypeDefines.h>
+#include <FEXCore/Utils/SignalScopeGuards.h>
 
 #include "Common/ArgumentLoader.h"
 #include "Common/Config.h"
@@ -242,6 +243,55 @@ void InitSyscalls() {
 
   FillNtDllLUTs(NtDll);
   PatchCallChecker();
+}
+
+void LoadImageVolatileMetadata(uint64_t Address) {
+  const auto Module = reinterpret_cast<HMODULE>(Address);
+  IMAGE_NT_HEADERS* Nt = RtlImageNtHeader(Module);
+  uint64_t EndAddress = Address + Nt->OptionalHeader.SizeOfImage;
+  ULONG Size;
+  const auto* LoadConfig =
+    reinterpret_cast<_IMAGE_LOAD_CONFIG_DIRECTORY64*>(RtlImageDirectoryEntryToData(Module, true, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, &Size));
+  if (!LoadConfig || LoadConfig->Size <= offsetof(_IMAGE_LOAD_CONFIG_DIRECTORY64, VolatileMetadataPointer)) {
+    return;
+  }
+
+  if (LoadConfig->VolatileMetadataPointer < Address || LoadConfig->VolatileMetadataPointer + sizeof(IMAGE_VOLATILE_METADATA) >= EndAddress) {
+    return;
+  }
+
+  const auto* VolatileMetadata = reinterpret_cast<IMAGE_VOLATILE_METADATA*>(LoadConfig->VolatileMetadataPointer);
+  if (!VolatileMetadata || Address + VolatileMetadata->VolatileAccessTable + VolatileMetadata->VolatileAccessTableSize >= EndAddress ||
+      Address + VolatileMetadata->VolatileInfoRangeTable + VolatileMetadata->VolatileInfoRangeTableSize >= EndAddress) {
+    return;
+  }
+
+  fextl::set<uint64_t> VolatileInstructions;
+  const auto* VolatileAccessTableBegin = reinterpret_cast<IMAGE_VOLATILE_RVA_METADATA*>(Address + VolatileMetadata->VolatileAccessTable);
+  const auto* VolatileAccessTableEnd =
+    VolatileAccessTableBegin + (VolatileMetadata->VolatileAccessTableSize / sizeof(IMAGE_VOLATILE_RVA_METADATA));
+  for (auto It = VolatileAccessTableBegin; It != VolatileAccessTableEnd; It++) {
+    VolatileInstructions.emplace(Address + It->Rva);
+  }
+
+  FEXCore::IntervalList<uint64_t> VolatileValidRanges;
+  const auto* VolatileInfoRangeTableBegin = reinterpret_cast<IMAGE_VOLATILE_RANGE_METADATA*>(Address + VolatileMetadata->VolatileInfoRangeTable);
+  const auto* VolatileInfoRangeTableEnd =
+    VolatileInfoRangeTableBegin + (VolatileMetadata->VolatileInfoRangeTableSize / sizeof(IMAGE_VOLATILE_RANGE_METADATA));
+  for (auto It = VolatileInfoRangeTableBegin; It != VolatileInfoRangeTableEnd; It++) {
+    VolatileValidRanges.Insert({Address + It->Rva, Address + It->Rva + It->Size});
+  }
+
+  std::scoped_lock Lock(CTX->GetCodeInvalidationMutex());
+  CTX->AddForceTSOInformation(VolatileValidRanges, std::move(VolatileInstructions));
+}
+
+void HandleImageMap(uint64_t Address) {
+  FEX_CONFIG_OPT(VolatileMetadata, VOLATILEMETADATA);
+  if (VolatileMetadata) {
+    LoadImageVolatileMetadata(Address);
+  }
+  InvalidationTracker->HandleImageMap(Address);
 }
 } // namespace
 
@@ -530,14 +580,15 @@ NTSTATUS ProcessInit() {
   InitSyscalls();
 
   FEX::Windows::InitCRTProcess();
-  FEX::Config::LoadConfig(nullptr, FEX::Windows::GetExecutableFilePath(), nullptr, FEX::ReadPortabilityInformation());
+  const auto ExecutablePath = FEX::Windows::GetExecutableFilePath();
+  FEX::Config::LoadConfig(nullptr, ExecutablePath, nullptr, FEX::ReadPortabilityInformation());
   FEXCore::Config::ReloadMetaLayer();
   FEX::Windows::Logging::Init();
 
-  FEXCore::Config::EraseSet(FEXCore::Config::CONFIG_IS64BIT_MODE, "1");
+  FEXCore::Config::Set(FEXCore::Config::CONFIG_IS64BIT_MODE, "1");
 
   // Not applicable to Windows
-  FEXCore::Config::EraseSet(FEXCore::Config::ConfigOption::CONFIG_TSOAUTOMIGRATION, "0");
+  FEXCore::Config::Set(FEXCore::Config::ConfigOption::CONFIG_TSOAUTOMIGRATION, "0");
 
   __wine_dbg_output("starting FEX based libarm64ecfex.dll\n");
 
@@ -564,7 +615,7 @@ NTSTATUS ProcessInit() {
   InvalidationTracker.emplace(*CTX, Threads);
 
   auto MainModule = reinterpret_cast<__TEB*>(NtCurrentTeb())->Peb->ImageBaseAddress;
-  InvalidationTracker->HandleImageMap(reinterpret_cast<uint64_t>(MainModule));
+  HandleImageMap(reinterpret_cast<uint64_t>(MainModule));
 
   CPUFeatures.emplace(*CTX);
 
@@ -575,10 +626,18 @@ NTSTATUS ProcessInit() {
   Exception::KiUserExceptionDispatcher = NtDllRedirectionLUT[KiUserExceptionDispatcherFFS - NtDllBase] + NtDllBase;
 
   FEX_CONFIG_OPT(ProfileStats, PROFILESTATS);
+  FEX_CONFIG_OPT(StartupSleep, STARTUPSLEEP);
+  FEX_CONFIG_OPT(StartupSleepProcName, STARTUPSLEEPPROCNAME);
 
   if (IsWine && ProfileStats()) {
     StatAllocHandler = fextl::make_unique<FEX::Windows::StatAlloc>(FEXCore::Profiler::AppType::WIN_ARM64EC);
   }
+
+  if (StartupSleep() && (StartupSleepProcName().empty() || ExecutablePath == StartupSleepProcName())) {
+    LogMan::Msg::IFmt("[{}][{}] Sleeping for {} seconds", GetCurrentProcessId(), ExecutablePath, StartupSleep());
+    std::this_thread::sleep_for(std::chrono::seconds(StartupSleep()));
+  }
+
   return STATUS_SUCCESS;
 }
 
@@ -738,8 +797,12 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
     return STATUS_SUCCESS;
   }
 
-  std::scoped_lock Lock(ThreadCreationMutex);
-  InvalidationTracker->HandleImageMap(reinterpret_cast<uint64_t>(Address));
+  {
+    std::scoped_lock Lock(ThreadCreationMutex);
+    HandleImageMap(reinterpret_cast<uint64_t>(Address));
+  }
+
+
   return STATUS_SUCCESS;
 }
 
@@ -753,7 +816,11 @@ void NotifyUnmapViewOfSection(void* Address, BOOL After, NTSTATUS Status) {
   }
 
   std::scoped_lock Lock(ThreadCreationMutex);
-  InvalidationTracker->InvalidateContainingSection(reinterpret_cast<uint64_t>(Address), true);
+  auto [Start, Size] = InvalidationTracker->InvalidateContainingSection(reinterpret_cast<uint64_t>(Address), true);
+  if (Size) {
+    std::scoped_lock Lock(CTX->GetCodeInvalidationMutex());
+    CTX->RemoveForceTSOInformation(Start, Size);
+  }
 }
 
 void FlushInstructionCacheHeavy(const void* Address, SIZE_T Size) {
