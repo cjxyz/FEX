@@ -6,6 +6,7 @@ $end_info$
 */
 
 #include "Interface/Core/JIT/JITClass.h"
+#include "Interface/Context/Context.h"
 
 namespace FEXCore::CPU {
 #define DEF_OP(x) void Arm64JITCore::Op_##x(IR::IROp_Header const* IROp, IR::NodeID Node)
@@ -16,7 +17,7 @@ DEF_OP(VInsGPR) {
   const auto DestIdx = Op->DestIdx;
   const auto ElementSize = Op->Header.ElementSize;
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto SubEmitSize = ConvertSubRegSize8(IROp);
   const auto ElementsPer128Bit = IR::NumElements(IR::OpSize::i128Bit, ElementSize);
@@ -122,7 +123,7 @@ DEF_OP(VDupFromGPR) {
   const auto Src = GetReg(Op->Src.ID());
 
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto SubEmitSize = ConvertSubRegSize8(IROp);
 
@@ -216,7 +217,7 @@ DEF_OP(Vector_SToF) {
   const auto ElementSize = Op->Header.ElementSize;
   const auto SubEmitSize = ConvertSubRegSize248(IROp);
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto Dst = GetVReg(Node);
   const auto Vector = GetVReg(Op->Vector.ID());
@@ -249,7 +250,7 @@ DEF_OP(Vector_FToZS) {
   const auto ElementSize = Op->Header.ElementSize;
   const auto SubEmitSize = ConvertSubRegSize248(IROp);
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto Dst = GetVReg(Node);
   const auto Vector = GetVReg(Op->Vector.ID());
@@ -280,7 +281,7 @@ DEF_OP(Vector_FToS) {
   const auto OpSize = IROp->Size;
 
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto SubEmitSize = ConvertSubRegSize248(IROp);
 
@@ -311,7 +312,7 @@ DEF_OP(Vector_FToF) {
   const auto ElementSize = Op->Header.ElementSize;
   const auto SubEmitSize = ConvertSubRegSize248(IROp);
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto Conv = (IR::OpSizeToSize(ElementSize) << 8) | IR::OpSizeToSize(Op->SrcElementSize);
 
@@ -414,7 +415,7 @@ DEF_OP(Vector_FToI) {
   const auto ElementSize = Op->Header.ElementSize;
   const auto SubEmitSize = ConvertSubRegSize248(IROp);
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto Dst = GetVReg(Node);
   const auto Vector = GetVReg(Op->Vector.ID());
@@ -469,13 +470,68 @@ DEF_OP(Vector_FToI) {
   }
 }
 
+DEF_OP(Vector_FToISized) {
+  const auto Op = IROp->C<IR::IROp_Vector_FToISized>();
+
+  const auto ElementSize = Op->Header.ElementSize;
+  const auto SubEmitSize = ConvertSubRegSize248(IROp);
+  const auto Is256Bit = IROp->Size == IR::OpSize::i256Bit;
+  LOGMAN_THROW_A_FMT(!Is256Bit, "256-bit not wired up, though we could change that");
+  LOGMAN_THROW_A_FMT(CTX->HostFeatures.SupportsFRINTTS, "Need FRINTTS for Vector_FToISized");
+
+  const auto Dst = GetVReg(Node);
+  const auto Vector = GetVReg(Op->Vector.ID());
+
+  if (ElementSize == IROp->Size) {
+// See above
+#define ROUNDING_FN(name)                         \
+  if (ElementSize == IR::OpSize::i32Bit) {        \
+    name(Dst.S(), Vector.S());                    \
+  } else if (ElementSize == IR::OpSize::i64Bit) { \
+    name(Dst.D(), Vector.D());                    \
+  } else {                                        \
+    FEX_UNREACHABLE;                              \
+  }
+
+    if (Op->IntSize == IR::OpSize::i64Bit) {
+      if (Op->HostRound) {
+        ROUNDING_FN(frint64x);
+      } else {
+        ROUNDING_FN(frint64z);
+      }
+    } else {
+      if (Op->HostRound) {
+        ROUNDING_FN(frint32x);
+      } else {
+        ROUNDING_FN(frint32z);
+      }
+    }
+
+#undef ROUNDING_FN
+  } else {
+    if (Op->IntSize == IR::OpSize::i64Bit) {
+      if (Op->HostRound) {
+        frint64x(SubEmitSize, Dst.Q(), Vector.Q());
+      } else {
+        frint64z(SubEmitSize, Dst.Q(), Vector.Q());
+      }
+    } else {
+      if (Op->HostRound) {
+        frint32x(SubEmitSize, Dst.Q(), Vector.Q());
+      } else {
+        frint32z(SubEmitSize, Dst.Q(), Vector.Q());
+      }
+    }
+  }
+}
+
 DEF_OP(Vector_F64ToI32) {
   const auto Op = IROp->C<IR::IROp_Vector_F64ToI32>();
   const auto OpSize = IROp->Size;
   const auto Round = Op->Round;
 
   const auto Is256Bit = OpSize == IR::OpSize::i256Bit;
-  LOGMAN_THROW_A_FMT(!Is256Bit || (Is256Bit && HostSupportsSVE256), "Need SVE256 support in order to use {} with 256-bit operation", __func__);
+  LOGMAN_THROW_A_FMT(!Is256Bit || HostSupportsSVE256, "Need SVE256 support in order to use {} with 256-bit operation", __func__);
 
   const auto Dst = GetVReg(Node);
   const auto Vector = GetVReg(Op->Vector.ID());

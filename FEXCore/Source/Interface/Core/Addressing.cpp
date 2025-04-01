@@ -17,7 +17,6 @@ Ref LoadEffectiveAddress(IREmitter* IREmit, AddressMode A, IR::OpSize GPRSize, b
 
   if (A.Index) {
     if (A.IndexScale != 1) {
-      LOGMAN_THROW_A_FMT((A.IndexScale & (A.IndexScale - 1)) == 0, "power of two");
       uint32_t Log2 = FEXCore::ilog2(A.IndexScale);
 
       if (Tmp) {
@@ -127,7 +126,7 @@ AddressMode SelectAddressMode(IREmitter* IREmit, AddressMode A, IR::OpSize GPRSi
   } else {
     if (OffsetIsSIMM9 || OffsetIsUnsignedScaled) {
       return InlineImmOffsetLoadstore(A);
-    } else if (!Is32Bit && A.Base && (A.Index || A.Segment) & !A.Offset && (A.IndexScale == 1 || A.IndexScale == AccessSizeAsImm)) {
+    } else if (!Is32Bit && A.Base && (A.Index || A.Segment) && !A.Offset && (A.IndexScale == 1 || A.IndexScale == AccessSizeAsImm)) {
       return ScaledRegisterLoadstore(A);
     }
   }

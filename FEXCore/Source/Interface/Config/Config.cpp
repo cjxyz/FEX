@@ -19,12 +19,10 @@
 
 #include <array>
 #include <cstdlib>
-#include <functional>
 #include <optional>
 #include <stddef.h>
 #include <stdint.h>
 #include <string_view>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -111,14 +109,6 @@ fextl::string GetApplicationConfig(const std::string_view Program, bool Global) 
   }
 
   return fextl::fmt::format("{}{}.json", ConfigFile, Program);
-}
-
-void SetConfig(FEXCore::Context::Context* CTX, ConfigOption Option, uint64_t Config) {}
-
-void SetConfig(FEXCore::Context::Context* CTX, ConfigOption Option, const fextl::string& Config) {}
-
-uint64_t GetConfig(FEXCore::Context::Context* CTX, ConfigOption Option) {
-  return 0;
 }
 
 static fextl::map<FEXCore::Config::LayerType, fextl::unique_ptr<FEXCore::Config::Layer>> ConfigLayers;
@@ -420,7 +410,7 @@ void ReloadMetaLayer() {
     }
   }
 
-  if (FEXCore::Config::Exists(FEXCore::Config::CONFIG_SINGLESTEP)) {
+  if (FEXCore::Config::Exists(FEXCore::Config::CONFIG_SINGLESTEP) && Meta->GetConv<bool>(FEXCore::Config::CONFIG_SINGLESTEP).value_or(false)) {
     // Single stepping also enforces single instruction size blocks
     Set(FEXCore::Config::ConfigOption::CONFIG_MAXINST, "1");
   }
