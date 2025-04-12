@@ -4,7 +4,6 @@ set (MAN_DIR share/man CACHE PATH "MAN_DIR")
 set (FEXCORE_BASE_SRCS
   Interface/Config/Config.cpp
   Utils/Allocator.cpp
-  Utils/CPUInfo.cpp
   Utils/FileLoading.cpp
   Utils/ForcedAssert.cpp
   Utils/LogManager.cpp
@@ -110,7 +109,7 @@ else()
   list(APPEND DEFINES "-DFEXCORE_PRESERVE_ALL_ATTR=;-DFEXCORE_HAS_PRESERVE_ALL_ATTR=0")
 endif()
 
-set (LIBS fmt::fmt xxHash::xxhash FEXHeaderUtils CodeEmitter softfloat_3e cephes_128bit)
+set (LIBS fmt::fmt xxHash::xxhash FEXHeaderUtils CodeEmitter cephes_128bit)
 
 if (ENABLE_VIXL_DISASSEMBLER OR ENABLE_VIXL_SIMULATOR)
   list (APPEND LIBS vixl)
