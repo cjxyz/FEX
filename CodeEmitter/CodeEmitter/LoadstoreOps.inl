@@ -416,8 +416,7 @@ public:
         0;
     ASIMDSTLD<size, true, 1>(Op, Opcode, rt, Index, rn, Reg::r0);
   }
-  template<SubRegSize size, typename T>
-  requires (std::is_same_v<QRegister, T> || std::is_same_v<DRegister, T>)
+  template<SubRegSize size, IsQOrDRegister T>
   void ld1r(T rt, Register rn) {
     constexpr uint32_t Op = 0b0000'1101'000 << 21;
     constexpr uint32_t Opcode = 0b110;
@@ -435,8 +434,7 @@ public:
         0;
     ASIMDSTLD<size, true, 2>(Op, Opcode, rt, Index, rn, Reg::r0);
   }
-  template<SubRegSize size, typename T>
-  requires (std::is_same_v<QRegister, T> || std::is_same_v<DRegister, T>)
+  template<SubRegSize size, IsQOrDRegister T>
   void ld2r(T rt, T rt2, Register rn) {
     LOGMAN_THROW_A_FMT(AreVectorsSequential(rt, rt2), "rt and rt2 must be sequential");
     constexpr uint32_t Op = 0b0000'1101'000 << 21;
@@ -455,8 +453,7 @@ public:
         0;
     ASIMDSTLD<size, true, 3>(Op, Opcode, rt, Index, rn, Reg::r0);
   }
-  template<SubRegSize size, typename T>
-  requires (std::is_same_v<QRegister, T> || std::is_same_v<DRegister, T>)
+  template<SubRegSize size, IsQOrDRegister T>
   void ld3r(T rt, T rt2, T rt3, Register rn) {
     LOGMAN_THROW_A_FMT(AreVectorsSequential(rt, rt2, rt3), "rt, rt2, and rt3 must be sequential");
     constexpr uint32_t Op = 0b0000'1101'000 << 21;
@@ -475,8 +472,7 @@ public:
         0;
     ASIMDSTLD<size, true, 4>(Op, Opcode, rt, Index, rn, Reg::r0);
   }
-  template<SubRegSize size, typename T>
-  requires (std::is_same_v<QRegister, T> || std::is_same_v<DRegister, T>)
+  template<SubRegSize size, IsQOrDRegister T>
   void ld4r(T rt, T rt2, T rt3, T rt4, Register rn) {
     LOGMAN_THROW_A_FMT(AreVectorsSequential(rt, rt2, rt3, rt4), "rt, rt2, rt3, and rt4 must be sequential");
     constexpr uint32_t Op = 0b0000'1101'000 << 21;
@@ -2136,7 +2132,370 @@ public:
   }
 
   // Memory copy/set
-  // TODO
+  void cpyfp(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0000, rs, rn, rd);
+  }
+  void cpyfm(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0000, rs, rn, rd);
+  }
+  void cpyfe(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0000, rs, rn, rd);
+  }
+  void cpyfpwt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0001, rs, rn, rd);
+  }
+  void cpyfmwt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0001, rs, rn, rd);
+  }
+  void cpyfewt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0001, rs, rn, rd);
+  }
+  void cpyfprt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0010, rs, rn, rd);
+  }
+  void cpyfmrt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0010, rs, rn, rd);
+  }
+  void cpyfert(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0010, rs, rn, rd);
+  }
+  void cpyfpt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0011, rs, rn, rd);
+  }
+  void cpyfmt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0011, rs, rn, rd);
+  }
+  void cpyfet(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0011, rs, rn, rd);
+  }
+  void cpyfpwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0100, rs, rn, rd);
+  }
+  void cpyfmwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0100, rs, rn, rd);
+  }
+  void cpyfewn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0100, rs, rn, rd);
+  }
+  void cpyfpwtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0101, rs, rn, rd);
+  }
+  void cpyfmwtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0101, rs, rn, rd);
+  }
+  void cpyfewtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0101, rs, rn, rd);
+  }
+  void cpyfprtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0110, rs, rn, rd);
+  }
+  void cpyfmrtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0110, rs, rn, rd);
+  }
+  void cpyfertwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0110, rs, rn, rd);
+  }
+  void cpyfptwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b0111, rs, rn, rd);
+  }
+  void cpyfmtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b0111, rs, rn, rd);
+  }
+  void cpyfetwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b0111, rs, rn, rd);
+  }
+  void cpyfprn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1000, rs, rn, rd);
+  }
+  void cpyfmrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1000, rs, rn, rd);
+  }
+  void cpyfern(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1000, rs, rn, rd);
+  }
+  void cpyfpwtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1001, rs, rn, rd);
+  }
+  void cpyfmwtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1001, rs, rn, rd);
+  }
+  void cpyfewtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1001, rs, rn, rd);
+  }
+  void cpyfprtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1010, rs, rn, rd);
+  }
+  void cpyfmrtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1010, rs, rn, rd);
+  }
+  void cpyfertrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1010, rs, rn, rd);
+  }
+  void cpyfptrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1011, rs, rn, rd);
+  }
+  void cpyfmtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1011, rs, rn, rd);
+  }
+  void cpyfetrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1011, rs, rn, rd);
+  }
+  void cpyfpn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1100, rs, rn, rd);
+  }
+  void cpyfmn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1100, rs, rn, rd);
+  }
+  void cpyfen(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1100, rs, rn, rd);
+  }
+  void cpyfpwtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1101, rs, rn, rd);
+  }
+  void cpyfmwtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1101, rs, rn, rd);
+  }
+  void cpyfewtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1101, rs, rn, rd);
+  }
+  void cpyfprtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1110, rs, rn, rd);
+  }
+  void cpyfmrtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1110, rs, rn, rd);
+  }
+  void cpyfertn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1110, rs, rn, rd);
+  }
+  void cpyfptn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b00, 0b1111, rs, rn, rd);
+  }
+  void cpyfmtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b01, 0b1111, rs, rn, rd);
+  }
+  void cpyfetn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 0, 0b10, 0b1111, rs, rn, rd);
+  }
+
+  void setp(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0000, rs, rn, rd);
+  }
+  void setm(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0100, rs, rn, rd);
+  }
+  void sete(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b1000, rs, rn, rd);
+  }
+  void setpt(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0001, rs, rn, rd);
+  }
+  void setmt(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0101, rs, rn, rd);
+  }
+  void setet(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b1001, rs, rn, rd);
+  }
+  void setpn(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0010, rs, rn, rd);
+  }
+  void setmn(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0110, rs, rn, rd);
+  }
+  void seten(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b1010, rs, rn, rd);
+  }
+  void setptn(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0011, rs, rn, rd);
+  }
+  void setmtn(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b0111, rs, rn, rd);
+  }
+  void setetn(Register rd, Register rn, Register rs) {
+    MemoryCopyAndMemorySet(0, 0, 0b11, 0b1011, rs, rn, rd);
+  }
+
+  void cpyp(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0000, rs, rn, rd);
+  }
+  void cpym(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0000, rs, rn, rd);
+  }
+  void cpye(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0000, rs, rn, rd);
+  }
+  void cpypwt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0001, rs, rn, rd);
+  }
+  void cpymwt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0001, rs, rn, rd);
+  }
+  void cpyewt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0001, rs, rn, rd);
+  }
+  void cpyprt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0010, rs, rn, rd);
+  }
+  void cpymrt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0010, rs, rn, rd);
+  }
+  void cpyert(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0010, rs, rn, rd);
+  }
+  void cpypt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0011, rs, rn, rd);
+  }
+  void cpymt(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0011, rs, rn, rd);
+  }
+  void cpyet(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0011, rs, rn, rd);
+  }
+  void cpypwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0100, rs, rn, rd);
+  }
+  void cpymwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0100, rs, rn, rd);
+  }
+  void cpyewn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0100, rs, rn, rd);
+  }
+  void cpypwtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0101, rs, rn, rd);
+  }
+  void cpymwtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0101, rs, rn, rd);
+  }
+  void cpyewtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0101, rs, rn, rd);
+  }
+  void cpyprtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0110, rs, rn, rd);
+  }
+  void cpymrtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0110, rs, rn, rd);
+  }
+  void cpyertwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0110, rs, rn, rd);
+  }
+  void cpyptwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b0111, rs, rn, rd);
+  }
+  void cpymtwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b0111, rs, rn, rd);
+  }
+  void cpyetwn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b0111, rs, rn, rd);
+  }
+  void cpyprn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1000, rs, rn, rd);
+  }
+  void cpymrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1000, rs, rn, rd);
+  }
+  void cpyern(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1000, rs, rn, rd);
+  }
+  void cpypwtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1001, rs, rn, rd);
+  }
+  void cpymwtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1001, rs, rn, rd);
+  }
+  void cpyewtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1001, rs, rn, rd);
+  }
+  void cpyprtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1010, rs, rn, rd);
+  }
+  void cpymrtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1010, rs, rn, rd);
+  }
+  void cpyertrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1010, rs, rn, rd);
+  }
+  void cpyptrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1011, rs, rn, rd);
+  }
+  void cpymtrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1011, rs, rn, rd);
+  }
+  void cpyetrn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1011, rs, rn, rd);
+  }
+  void cpypn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1100, rs, rn, rd);
+  }
+  void cpymn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1100, rs, rn, rd);
+  }
+  void cpyen(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1100, rs, rn, rd);
+  }
+  void cpypwtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1101, rs, rn, rd);
+  }
+  void cpymwtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1101, rs, rn, rd);
+  }
+  void cpyewtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1101, rs, rn, rd);
+  }
+  void cpyprtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1110, rs, rn, rd);
+  }
+  void cpymrtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1110, rs, rn, rd);
+  }
+  void cpyertn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1110, rs, rn, rd);
+  }
+  void cpyptn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b00, 0b1111, rs, rn, rd);
+  }
+  void cpymtn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b01, 0b1111, rs, rn, rd);
+  }
+  void cpyetn(Register rd, Register rs, Register rn) {
+    MemoryCopyAndMemorySet(0, 1, 0b10, 0b1111, rs, rn, rd);
+  }
+
+  void setgp(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0000, rs, rn, rd);
+  }
+  void setgm(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0100, rs, rn, rd);
+  }
+  void setge(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b1000, rs, rn, rd);
+  }
+  void setgpt(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0001, rs, rn, rd);
+  }
+  void setgmt(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0101, rs, rn, rd);
+  }
+  void setget(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b1001, rs, rn, rd);
+  }
+  void setgpn(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0010, rs, rn, rd);
+  }
+  void setgmn(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0110, rs, rn, rd);
+  }
+  void setgen(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b1010, rs, rn, rd);
+  }
+  void setgptn(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0011, rs, rn, rd);
+  }
+  void setgmtn(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b0111, rs, rn, rd);
+  }
+  void setgetn(Register rd, Register rn, Register rs) {
+     MemoryCopyAndMemorySet(0, 1, 0b11, 0b1011, rs, rn, rd);
+  }
+
   // Loadstore no-allocate pair
   void stnp(ARMEmitter::WRegister rt, ARMEmitter::WRegister rt2, ARMEmitter::Register rn, int32_t Imm) {
     LOGMAN_THROW_A_FMT(Imm >= -256 && Imm <= 252 && ((Imm & 0b11) == 0), "Unscaled offset too large");
@@ -3819,7 +4178,12 @@ public:
   }
 
   // Loadstore PAC
-  // TODO
+  void ldraa(XRegister rt, XRegister rn, IndexType type, int32_t offset = 0) {
+    LoadStorePAC(0b11, 0, 0, offset, type, rn, rt);
+  }
+  void ldrab(XRegister rt, XRegister rn, IndexType type, int32_t offset = 0) {
+    LoadStorePAC(0b11, 0, 1, offset, type, rn, rt);
+  }
 
   // Loadstore unsigned immediate
   // Maximum values of unsigned immediate offsets for particular data sizes.
@@ -3968,6 +4332,20 @@ private:
     dc32(Instr);
   }
 
+  void MemoryCopyAndMemorySet(uint32_t sz, uint32_t o0, uint32_t op1, uint32_t op2, Register rs, Register rn, Register rd) {
+    uint32_t Instr = 0b0001'1001'0000'0000'0000'0100'0000'0000;
+
+    Instr |= sz << 30;
+    Instr |= o0 << 26;
+    Instr |= op1 << 22;
+    Instr |= rs.Idx() << 16;
+    Instr |= op2 << 12;
+    Instr |= rn.Idx() << 5;
+    Instr |= rd.Idx();
+
+    dc32(Instr);
+  }
+
   // Loadstore no-allocate pair
   template<typename T>
   void LoadStoreNoAllocate(uint32_t Op, T rt, T rt2, ARMEmitter::Register rn, uint32_t Imm) {
@@ -4031,6 +4409,30 @@ private:
     Instr |= Shift << 12;
     Instr |= Encode_rn(rn);
     Instr |= Encode_rm(rm);
+    dc32(Instr);
+  }
+
+  void LoadStorePAC(uint32_t size, uint32_t VR, uint32_t M, int32_t imm, IndexType type, Register rn, Register rt) {
+    LOGMAN_THROW_A_FMT((imm % 8) == 0, "Immediate ({}) must be divisible by 8", imm);
+    LOGMAN_THROW_A_FMT(imm >= -4096 && imm <= 4088, "Immediate ({}) must be within [-4096, 4088]", imm);
+    LOGMAN_THROW_A_FMT(type == IndexType::OFFSET || type == IndexType::PRE, "PAC may only use offset or pre-indexed values");
+
+    // The immediate is scaled down in order to fit within the available 10 immediate bits.
+    const auto scaled_imm = static_cast<uint32_t>(imm / 8);
+    const auto imm9 = scaled_imm & 0b1'1111'1111;
+    const auto S = (scaled_imm >> 9) & 1;
+
+    const auto W = type == IndexType::OFFSET ? 0U : 1U;
+
+    uint32_t Instr = 0b0011'1000'0010'0000'0000'0100'0000'0000;
+    Instr |= size << 30;
+    Instr |= VR << 26;
+    Instr |= M << 23;
+    Instr |= S << 22;
+    Instr |= imm9 << 12;
+    Instr |= W << 11;
+    Instr |= rn.Idx() << 5;
+    Instr |= rt.Idx();
     dc32(Instr);
   }
 
